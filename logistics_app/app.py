@@ -229,42 +229,11 @@ st.title("🚚 Optimizador Logístico")
 st.caption("Sube los tres archivos Excel desde el panel lateral para comenzar el análisis.")
 
 if not f_stock and not f_llegadas and not f_envios:
-    # ── Pantalla de bienvenida con formato esperado ──────────────────────────
     st.markdown("---")
-    st.header("📋 Formato de archivos", anchor="formato-de-archivos")
-
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.markdown("### 1️⃣ Stock actual")
-        st.dataframe(pd.DataFrame({
-            "Producto":        _productos_disponibles[:2] or ["Producto A", "Producto B"],
-            "Almacen_Central": [500, 200],
-            "Madrid":          [100, 50],
-            "Barcelona":       [80, 30],
-            "Valencia":        [60, 20],
-        }), use_container_width=True)
-        st.caption("Una fila por producto. Columnas: almacén central + una por cada almacén provincial.")
-
-    with c2:
-        st.markdown("### 2️⃣ Llegadas")
-        st.dataframe(pd.DataFrame({
-            "Fecha":    ["2024-05-01", "2024-05-08"],
-            "Producto": _productos_disponibles[:2] or ["Producto A", "Producto C"],
-            "Cajas":    [300, 150],
-        }), use_container_width=True)
-        st.caption("Una fila por recepción en el almacén central. Fecha en formato YYYY-MM-DD.")
-
-    with c3:
-        st.markdown("### 3️⃣ Envíos planificados")
-        st.dataframe(pd.DataFrame({
-            "Fecha":     ["2024-05-10", "2024-05-12"],
-            "Producto":  _productos_disponibles[:2] or ["Producto A", "Producto B"],
-            "Cajas":     [120, 80],
-            "Provincia": ["Barcelona", "Valencia"],
-            "Zona":      ["peninsula", "peninsula"],
-        }), use_container_width=True)
-        st.caption("Una fila por envío. Zona: 'peninsula' o 'baleares'.")
-
+    st.info(
+        "👈 **Descarga las plantillas desde el panel lateral**, rellénalas con tus datos "
+        "y súbelas aquí para comenzar el análisis."
+    )
     st.stop()
 
 
