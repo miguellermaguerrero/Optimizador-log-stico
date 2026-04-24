@@ -182,7 +182,7 @@ st.caption("Sube los tres archivos Excel desde el panel lateral para comenzar el
 if not f_stock and not f_llegadas and not f_envios:
     # ── Pantalla de bienvenida con formato esperado ──────────────────────────
     st.markdown("---")
-    st.markdown("## 📋 Formato de archivos", anchor="formato-de-archivos")
+    st.header("📋 Formato de archivos", anchor="formato-de-archivos")
 
     c1, c2, c3 = st.columns(3)
     with c1:
