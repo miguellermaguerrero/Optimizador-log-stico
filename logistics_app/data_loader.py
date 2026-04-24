@@ -347,6 +347,170 @@ def cargar_todo(tarifas_path=None, catalogo_path=None) -> dict:
     return datos
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# GENERADORES DE PLANTILLAS XLSX
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _hdr_cell(ws, row, col, value, bg="1E3A5F"):
+    """Escribe una celda de cabecera con estilo."""
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.utils import get_column_letter
+    c = ws.cell(row=row, column=col, value=value)
+    c.font = Font(bold=True, color="FFFFFF", name="Arial", size=10)
+    c.fill = PatternFill("solid", fgColor=bg)
+    c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=False)
+    return c
+
+
+def _data_cell(ws, row, col, value, bold=False, bg=None):
+    from openpyxl.styles import Font, PatternFill, Alignment
+    c = ws.cell(row=row, column=col, value=value)
+    c.font = Font(bold=bold, name="Arial", size=9)
+    c.alignment = Alignment(horizontal="left" if isinstance(value, str) else "center",
+                            vertical="center")
+    if bg:
+        c.fill = PatternFill("solid", fgColor=bg)
+    return c
+
+
+def _provincias_ordenadas(datos: dict) -> list[str]:
+    """Devuelve las 47 provincias en orden alfabético (sin PENINSULA_MEDIA)."""
+    return sorted(
+        p for p in datos.get("tarifa_pale_provincia", {}).keys()
+        if p != "PENINSULA_MEDIA"
+    )
+
+
+def generar_plantilla_stock(datos: dict) -> bytes:
+    """
+    Plantilla de stock: filas = Central Madrid + 47 provincias,
+    columnas = ALMACÉN + un producto por columna.
+    """
+    import io
+    from openpyxl import Workbook
+    from openpyxl.utils import get_column_letter
+
+    productos   = list(datos.get("productos", {}).keys())
+    almacenes   = ["Central Madrid"] + _provincias_ordenadas(datos)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Stock"
+
+    # Cabecera
+    _hdr_cell(ws, 1, 1, "ALMACÉN", bg="1E3A5F")
+    for j, prod in enumerate(productos, 2):
+        _hdr_cell(ws, 1, j, prod, bg="2C5282")
+
+    # Filas de datos
+    for i, alm in enumerate(almacenes, 2):
+        bg_row = "D6E4F0" if alm == "Central Madrid" else ("F7FAFC" if i % 2 == 0 else None)
+        _data_cell(ws, i, 1, alm, bold=(alm == "Central Madrid"), bg=bg_row)
+        for j in range(len(productos)):
+            _data_cell(ws, i, 2 + j, 0, bg=bg_row)
+
+    # Anchos
+    ws.column_dimensions["A"].width = 24
+    for j in range(len(productos)):
+        ws.column_dimensions[get_column_letter(2 + j)].width = 16
+    ws.row_dimensions[1].height = 20
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf.getvalue()
+
+
+def generar_plantilla_llegadas(datos: dict) -> bytes:
+    """
+    Plantilla de llegadas: filas = Central Madrid + 47 provincias,
+    columnas = ALMACÉN | FECHA | un producto por columna.
+    Rellena la FECHA cuando lleguen mercancías a ese almacén.
+    """
+    import io
+    from openpyxl import Workbook
+    from openpyxl.utils import get_column_letter
+
+    productos = list(datos.get("productos", {}).keys())
+    almacenes = ["Central Madrid"] + _provincias_ordenadas(datos)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Llegadas"
+
+    # Cabecera
+    _hdr_cell(ws, 1, 1, "ALMACÉN",  bg="1E6B3C")
+    _hdr_cell(ws, 1, 2, "FECHA",    bg="1E6B3C")
+    for j, prod in enumerate(productos, 3):
+        _hdr_cell(ws, 1, j, prod, bg="276749")
+
+    # Filas de datos
+    for i, alm in enumerate(almacenes, 2):
+        bg_row = "D5F5E3" if alm == "Central Madrid" else ("F0FFF4" if i % 2 == 0 else None)
+        _data_cell(ws, i, 1, alm,  bold=(alm == "Central Madrid"), bg=bg_row)
+        _data_cell(ws, i, 2, None, bg=bg_row)   # FECHA en blanco
+        for j in range(len(productos)):
+            _data_cell(ws, i, 3 + j, 0, bg=bg_row)
+
+    # Anchos
+    ws.column_dimensions["A"].width = 24
+    ws.column_dimensions["B"].width = 14
+    for j in range(len(productos)):
+        ws.column_dimensions[get_column_letter(3 + j)].width = 16
+    ws.row_dimensions[1].height = 20
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf.getvalue()
+
+
+def generar_plantilla_envios(datos: dict) -> bytes:
+    """
+    Plantilla de envíos planificados: filas = 47 provincias,
+    columnas = PROVINCIA | ZONA | FECHA | un producto por columna.
+    """
+    import io
+    from openpyxl import Workbook
+    from openpyxl.utils import get_column_letter
+
+    productos   = list(datos.get("productos", {}).keys())
+    provincias  = _provincias_ordenadas(datos)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Envíos"
+
+    # Cabecera
+    _hdr_cell(ws, 1, 1, "PROVINCIA", bg="C0392B")
+    _hdr_cell(ws, 1, 2, "ZONA",      bg="C0392B")
+    _hdr_cell(ws, 1, 3, "FECHA",     bg="C0392B")
+    for j, prod in enumerate(productos, 4):
+        _hdr_cell(ws, 1, j, prod, bg="922B21")
+
+    # Filas de datos
+    for i, prov in enumerate(provincias, 2):
+        bg_row = "FADBD8" if i % 2 == 0 else None
+        _data_cell(ws, i, 1, prov,        bold=True, bg=bg_row)
+        _data_cell(ws, i, 2, "peninsula", bg=bg_row)
+        _data_cell(ws, i, 3, None,        bg=bg_row)  # FECHA en blanco
+        for j in range(len(productos)):
+            _data_cell(ws, i, 4 + j, 0, bg=bg_row)
+
+    # Anchos
+    ws.column_dimensions["A"].width = 22
+    ws.column_dimensions["B"].width = 12
+    ws.column_dimensions["C"].width = 14
+    for j in range(len(productos)):
+        ws.column_dimensions[get_column_letter(4 + j)].width = 16
+    ws.row_dimensions[1].height = 20
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf.getvalue()
+
+
 # ── Test rápido al ejecutar directamente ──────────────────────────────────────
 if __name__ == "__main__":
     import json, sys

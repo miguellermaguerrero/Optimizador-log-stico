@@ -14,7 +14,7 @@ import matplotlib.ticker as mticker
 import io
 
 from config import TARIFAS_PATH, CATALOGO_PATH, UMBRAL_CERCANO_PCT
-from data_loader import cargar_todo
+from data_loader import cargar_todo, generar_plantilla_stock, generar_plantilla_llegadas, generar_plantilla_envios
 import logistics
 
 # ─── Configuración de página ─────────────────────────────────────────────────
@@ -145,29 +145,78 @@ with st.sidebar:
                 st.write(f"• {p}")
 
     st.markdown("---")
-    st.caption("Descarga las plantillas de ejemplo ↓")
-    st.markdown("[📥 Ver formato esperado](#formato-de-archivos)")
+    st.caption("📥 Descarga las plantillas con tus provincias y productos reales:")
+    XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    st.download_button("📦 Plantilla Stock",
+                       generar_plantilla_stock(_datos),
+                       "plantilla_stock.xlsx", mime=XLSX_MIME)
+    st.download_button("📥 Plantilla Llegadas",
+                       generar_plantilla_llegadas(_datos),
+                       "plantilla_llegadas.xlsx", mime=XLSX_MIME)
+    st.download_button("📤 Plantilla Envíos",
+                       generar_plantilla_envios(_datos),
+                       "plantilla_envios.xlsx", mime=XLSX_MIME)
 
 
 # ─── Funciones auxiliares de lectura ─────────────────────────────────────────
 
 def leer_stock(f) -> pd.DataFrame:
+    """Lee stock en formato ancho: ALMACÉN | Producto A | Producto B | ..."""
     df = pd.read_excel(f)
     df.columns = df.columns.str.strip()
     return df
+
 
 def leer_llegadas(f) -> pd.DataFrame:
+    """
+    Lee llegadas en formato ancho (ALMACÉN | FECHA | Prod A | Prod B | ...)
+    y devuelve formato largo (Fecha | Producto | Cajas).
+    También acepta el formato largo original (Fecha | Producto | Cajas).
+    """
     df = pd.read_excel(f)
     df.columns = df.columns.str.strip()
-    df["Fecha"] = pd.to_datetime(df["Fecha"], errors="coerce")
-    return df
+
+    if "ALMACÉN" in df.columns and "FECHA" in df.columns:
+        # Formato ancho → largo
+        id_cols   = ["ALMACÉN", "FECHA"]
+        prod_cols = [c for c in df.columns if c not in id_cols]
+        df_long = df.melt(id_vars=id_cols, value_vars=prod_cols,
+                          var_name="Producto", value_name="Cajas")
+        df_long = df_long[pd.to_numeric(df_long["Cajas"], errors="coerce").fillna(0) > 0].copy()
+        df_long["Fecha"] = pd.to_datetime(df_long["FECHA"], errors="coerce")
+        df_long["Cajas"] = pd.to_numeric(df_long["Cajas"], errors="coerce").fillna(0).astype(int)
+        return df_long[["Fecha", "Producto", "Cajas"]].reset_index(drop=True)
+    else:
+        # Formato largo original
+        df["Fecha"] = pd.to_datetime(df["Fecha"], errors="coerce")
+        return df
+
 
 def leer_envios(f) -> pd.DataFrame:
+    """
+    Lee envíos en formato ancho (PROVINCIA | ZONA | FECHA | Prod A | Prod B | ...)
+    y devuelve formato largo (Fecha | Producto | Cajas | Provincia | Zona).
+    También acepta el formato largo original.
+    """
     df = pd.read_excel(f)
     df.columns = df.columns.str.strip()
-    df["Fecha"] = pd.to_datetime(df["Fecha"], errors="coerce")
-    df["Cajas"] = pd.to_numeric(df["Cajas"], errors="coerce").fillna(0).astype(int)
-    return df
+
+    if "PROVINCIA" in df.columns and "ZONA" in df.columns:
+        # Formato ancho → largo
+        id_cols   = ["PROVINCIA", "ZONA", "FECHA"]
+        prod_cols = [c for c in df.columns if c not in id_cols]
+        df_long = df.melt(id_vars=id_cols, value_vars=prod_cols,
+                          var_name="Producto", value_name="Cajas")
+        df_long = df_long[pd.to_numeric(df_long["Cajas"], errors="coerce").fillna(0) > 0].copy()
+        df_long["Fecha"] = pd.to_datetime(df_long["FECHA"], errors="coerce")
+        df_long["Cajas"] = pd.to_numeric(df_long["Cajas"], errors="coerce").fillna(0).astype(int)
+        df_long = df_long.rename(columns={"PROVINCIA": "Provincia", "ZONA": "Zona"})
+        return df_long[["Fecha", "Producto", "Cajas", "Provincia", "Zona"]].reset_index(drop=True)
+    else:
+        # Formato largo original
+        df["Fecha"] = pd.to_datetime(df["Fecha"], errors="coerce")
+        df["Cajas"] = pd.to_numeric(df["Cajas"], errors="coerce").fillna(0).astype(int)
+        return df
 
 
 # ─── Paleta de colores para gráficos ─────────────────────────────────────────
