@@ -17,14 +17,107 @@ import io
 from config import TARIFAS_PATH, CATALOGO_PATH, UMBRAL_CERCANO_PCT
 from data_loader import cargar_todo, generar_plantilla_stock, generar_plantilla_llegadas, generar_plantilla_envios
 import logistics
+import auth
 
 # ─── Configuración de página ─────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Optimizador Logístico",
+    page_title="Debajo del hórreo",
     page_icon="🏪",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
+
+# ─── AUTENTICACIÓN ────────────────────────────────────────────────────────────
+NAVY_AUTH  = "#1A2E4A"
+WHITE_AUTH = "#FFFFFF"
+
+def _pantalla_auth():
+    """Muestra login / registro y detiene la ejecución hasta que el usuario acceda."""
+
+    # Logo en la pantalla de login
+    _logo_path = Path(__file__).parent / "logo.png"
+    _logo_b64  = base64.b64encode(_logo_path.read_bytes()).decode() if _logo_path.exists() else ""
+    _logo_tag  = (f'<img src="data:image/png;base64,{_logo_b64}" '
+                  f'style="height:80px;margin-bottom:12px;">') if _logo_b64 else "🏪"
+
+    st.markdown(f"""
+<style>
+.stApp {{ background: {NAVY_AUTH}; }}
+[data-testid="stSidebar"] {{display:none}}
+[data-testid="collapsedControl"] {{display:none}}
+.auth-box {{
+    background: {WHITE_AUTH};
+    border-radius: 18px;
+    padding: 40px 44px;
+    max-width: 420px;
+    margin: 60px auto 0 auto;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.25);
+    text-align: center;
+}}
+.auth-box h2 {{ color: {NAVY_AUTH}; margin: 0 0 4px 0; font-size: 1.6rem; }}
+.auth-box p  {{ color: #5a7490; margin: 0 0 24px 0; font-size: 0.9rem; }}
+</style>
+<div class="auth-box">
+  {_logo_tag}
+  <h2>Debajo del hórreo</h2>
+  <p>Gestión logística · Acceso privado</p>
+</div>
+""", unsafe_allow_html=True)
+
+    # Centrar el formulario
+    _, col, _ = st.columns([1, 2, 1])
+    with col:
+        modo = st.radio("", ["Iniciar sesión", "Crear cuenta"],
+                        horizontal=True, label_visibility="collapsed")
+        st.markdown("")
+
+        if modo == "Iniciar sesión":
+            email    = st.text_input("Correo electrónico", placeholder="tu@correo.com")
+            password = st.text_input("Contraseña", type="password", placeholder="••••••••")
+            if st.button("Entrar", use_container_width=True, type="primary"):
+                if email and password:
+                    ok, msg = auth.login(email, password)
+                    if ok:
+                        st.session_state["usuario"] = msg   # nombre o email
+                        st.rerun()
+                    else:
+                        st.error(msg)
+                else:
+                    st.warning("Introduce correo y contraseña.")
+
+        else:  # Crear cuenta
+            nombre   = st.text_input("Nombre", placeholder="Tu nombre")
+            email    = st.text_input("Correo electrónico", placeholder="tu@correo.com")
+            password = st.text_input("Contraseña", type="password",
+                                     placeholder="Mínimo 6 caracteres")
+            password2 = st.text_input("Repite la contraseña", type="password",
+                                      placeholder="••••••••")
+            if st.button("Crear cuenta", use_container_width=True, type="primary"):
+                if not (nombre and email and password and password2):
+                    st.warning("Rellena todos los campos.")
+                elif password != password2:
+                    st.error("Las contraseñas no coinciden.")
+                else:
+                    ok, msg = auth.registrar(email, password, nombre)
+                    if ok:
+                        st.success(msg)
+                    else:
+                        st.error(msg)
+
+    st.stop()
+
+
+# Comprobar sesión
+if "usuario" not in st.session_state:
+    _pantalla_auth()
+
+# Botón de cerrar sesión (esquina superior derecha)
+with st.container():
+    _, _btn_col = st.columns([8, 1])
+    with _btn_col:
+        if st.button("Salir 🔒", help="Cerrar sesión"):
+            del st.session_state["usuario"]
+            st.rerun()
 
 # ─── Carga de tarifas y catálogo desde Excel (cacheado) ──────────────────────
 @st.cache_resource(show_spinner="Cargando tarifas y catálogo…")
@@ -253,7 +346,7 @@ st.markdown(f"""
 <div class="app-header">
   {_logo_html}
   <div>
-    <h1>Optimizador Logístico</h1>
+    <h1>Debajo del hórreo</h1>
     <p>Análisis y optimización de costes de distribución</p>
     <span class="badge">✅ {n_prov} provincias · {n_prod} productos cargados</span>
   </div>
@@ -325,6 +418,22 @@ with st.expander("⚙️ Parámetros de análisis", expanded=False):
 logistics.DATOS["umbral_cercano_pct"] = umbral_sug / 100
 
 st.markdown("<br>", unsafe_allow_html=True)
+
+# ─── VISTA PREVIA INMEDIATA DEL ARCHIVO DE STOCK ─────────────────────────────
+if f_stock:
+    st.markdown('<p class="section-title">📦 Vista previa — Stock actual</p>', unsafe_allow_html=True)
+    _df_prev = pd.read_excel(f_stock)
+    _df_prev.columns = _df_prev.columns.str.strip()
+    _almacenes_prev = [c for c in _df_prev.columns if c != "ALMACÉN"]
+    n_filas, n_cols = _df_prev.shape
+
+    _p1, _p2, _p3 = st.columns(3)
+    _p1.metric("Filas (almacenes)", n_filas)
+    _p2.metric("Columnas (productos)", n_cols - 1 if "ALMACÉN" in _df_prev.columns else n_cols)
+    _p3.metric("Total cajas", f"{int(_df_prev.select_dtypes('number').sum().sum()):,}")
+
+    st.dataframe(_df_prev, use_container_width=True, height=320)
+    st.markdown("<br>", unsafe_allow_html=True)
 
 # ─── PANTALLA SIN DATOS ───────────────────────────────────────────────────────
 if not f_stock and not f_llegadas and not f_envios:
