@@ -2,6 +2,7 @@
 data_loader.py — Lee tarifas y catálogo de producto desde Excel.
 Exporta cargar_todo() → dict DATOS que sustituye a las constantes de config.py.
 """
+from __future__ import annotations
 
 import re
 from pathlib import Path

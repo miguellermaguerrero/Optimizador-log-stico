@@ -6,6 +6,7 @@ Los datos de tarifas se inyectan desde fuera mediante set_datos(dict).
 Esto permite que app.py cargue los valores desde los archivos Excel sin
 necesidad de tocar este módulo.
 """
+from __future__ import annotations
 
 import math
 import numpy as np
