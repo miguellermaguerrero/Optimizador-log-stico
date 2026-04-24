@@ -38,7 +38,7 @@ def _pantalla_auth():
     _logo_path = Path(__file__).parent / "logo.png"
     _logo_b64  = base64.b64encode(_logo_path.read_bytes()).decode() if _logo_path.exists() else ""
     _logo_tag  = (f'<img src="data:image/png;base64,{_logo_b64}" '
-                  f'style="height:80px;margin-bottom:12px;">') if _logo_b64 else "🏪"
+                  f'style="height:140px;margin-bottom:16px;">') if _logo_b64 else "🏪"
 
     st.markdown(f"""
 <style>
@@ -56,6 +56,24 @@ def _pantalla_auth():
 }}
 .auth-box h2 {{ color: {NAVY_AUTH}; margin: 0 0 4px 0; font-size: 1.6rem; }}
 .auth-box p  {{ color: #5a7490; margin: 0 0 24px 0; font-size: 0.9rem; }}
+
+/* Botón azul claro */
+.stButton > button[kind="primary"] {{
+    background: #4A7AB5 !important;
+    border: none !important;
+    border-radius: 8px !important;
+    font-weight: 600 !important;
+}}
+.stButton > button[kind="primary"]:hover {{
+    background: #2E5F8A !important;
+}}
+
+/* Radio labels en blanco */
+div[data-testid="stRadio"] label p {{
+    color: {WHITE_AUTH} !important;
+    font-weight: 600;
+    font-size: 1rem;
+}}
 </style>
 <div class="auth-box">
   {_logo_tag}
@@ -798,4 +816,3 @@ Coste total: <b>{row['Coste_total']:.2f} €</b>
     ax3.set_title("Distribución del coste logístico", color=NAVY, fontweight="bold")
     st.pyplot(fig3)
     plt.close()
-                                                                                                                                                                                                                                                                                                                                                                                                                                                 
