@@ -79,7 +79,7 @@ div[data-testid="stRadio"] label p {{
 </style>
 <div class="auth-box">
   {logo_tag}
-  <h2>Debajo del hórreo</h2>
+  <h2>Bajo el hórreo</h2>
   <p>Gestión logística · Acceso privado</p>
 </div>
 """, unsafe_allow_html=True)
