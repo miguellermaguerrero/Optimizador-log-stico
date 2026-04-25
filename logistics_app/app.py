@@ -857,7 +857,7 @@ def leer_envios(f) -> pd.DataFrame:
 
 # ─── ANÁLISIS ─────────────────────────────────────────────────────────────────
 st.markdown('<p class="section-title">📊 Análisis</p>', unsafe_allow_html=True)
-tabs = st.tabs(["📦 Stock", "📥 Llegadas", "📤 Envíos & Optimización"])
+tabs = st.tabs(["📦 Stock", "📥 Llegadas", "📤 Envíos & Optimización", "💰 Comparador de precios"])
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 1 — STOCK
@@ -1157,3 +1157,248 @@ Coste total: <b>{row['Coste_total']:.2f} €</b>
     ax3.set_title("Distribución del coste logístico", color=NAVY, fontweight="bold")
     st.pyplot(fig3)
     plt.close()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 4 — COMPARADOR DE PRECIOS
+# ══════════════════════════════════════════════════════════════════════════════
+with tabs[3]:
+    if not f_envios:
+        st.info("Sube el archivo de **envíos planificados** para usar el comparador.")
+        st.stop()
+
+    # Reutilizamos el resultado del análisis si ya existe, si no lo calculamos
+    if "df_result_cmp" not in st.session_state or st.button(
+        "🔄 Recalcular", key="cmp_recalc", help="Vuelve a leer el archivo de envíos"
+    ):
+        _df_env_cmp = leer_envios(f_envios)
+        _df_res_cmp = logistics.analizar_hoja_envios(_df_env_cmp, valor_por_caja=valor_caja)
+        st.session_state["df_result_cmp"]  = _df_res_cmp
+        st.session_state["df_envios_cmp"]  = _df_env_cmp
+        st.session_state["cmp_decisiones"] = {}
+
+    df_res_cmp  = st.session_state["df_result_cmp"]
+    df_env_cmp  = st.session_state["df_envios_cmp"]
+
+    if "cmp_decisiones" not in st.session_state:
+        st.session_state["cmp_decisiones"] = {}
+
+    coste_original = df_res_cmp["Coste_total"].sum()
+    cajas_original = df_res_cmp["Cajas"].sum()
+
+    # ── Resumen de la factura semanal ─────────────────────────────────────────
+    st.markdown(f"""
+<div style="background:linear-gradient(135deg,{NAVY} 0%,{BLUE} 100%);
+            border-radius:14px;padding:22px 28px;margin-bottom:20px;">
+  <span style="color:rgba(255,255,255,0.8);font-size:0.82rem;font-weight:700;
+               text-transform:uppercase;letter-spacing:1px;">
+    Factura semanal — plan actual
+  </span>
+  <div style="display:flex;gap:40px;margin-top:10px;flex-wrap:wrap;">
+    <div>
+      <div style="color:rgba(255,255,255,0.65);font-size:0.8rem;">Coste total</div>
+      <div style="color:#fff;font-size:1.8rem;font-weight:700;">
+        {coste_original:,.2f} €
+      </div>
+    </div>
+    <div>
+      <div style="color:rgba(255,255,255,0.65);font-size:0.8rem;">Total cajas</div>
+      <div style="color:#fff;font-size:1.8rem;font-weight:700;">
+        {int(cajas_original):,}
+      </div>
+    </div>
+    <div>
+      <div style="color:rgba(255,255,255,0.65);font-size:0.8rem;">Nº de envíos</div>
+      <div style="color:#fff;font-size:1.8rem;font-weight:700;">
+        {len(df_res_cmp)}
+      </div>
+    </div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+    # ── Filtrar envíos con margen de mejora ───────────────────────────────────
+    _mejorables = df_res_cmp[df_res_cmp["Cerca_de_optimo"] == True].copy()
+    _ya_optimos = df_res_cmp[df_res_cmp["Cerca_de_optimo"] != True].copy()
+
+    _ahorro_max_total = _mejorables["Sugerencia_ahorro"].fillna(0).sum()
+
+    if _mejorables.empty:
+        st.success("✅ Todos los envíos ya están en el tramo óptimo. No hay nada que ajustar.")
+        st.stop()
+
+    st.markdown(f"""
+<div style="background:#FFF8E7;border-radius:10px;padding:14px 20px;
+            border-left:4px solid #F0A500;margin-bottom:16px;">
+  Se han detectado <b>{len(_mejorables)} envíos</b> que podrían mejorarse.
+  El ahorro potencial máximo es <b>{_ahorro_max_total:,.2f} €</b>
+  si aceptas todos los ajustes sugeridos.
+</div>
+""", unsafe_allow_html=True)
+
+    # ── Revisión uno a uno ────────────────────────────────────────────────────
+    st.markdown(f'<p class="section-title">🔍 Revisa cada envío mejorable</p>',
+                unsafe_allow_html=True)
+
+    _ahorro_acumulado = 0.0
+    _decisiones       = st.session_state["cmp_decisiones"]
+
+    for _pos, (idx, row) in enumerate(_mejorables.iterrows()):
+        _sug_list = row.get("_sugerencias_full") or []
+        if not _sug_list:
+            continue
+        _sug     = _sug_list[0]
+        _dec_key = f"cmp_{idx}"
+        _dec     = _decisiones.get(_dec_key)   # None / "aceptar" / "rechazar" / int(cajas)
+
+        # Calcular ahorro de este envío si se acepta
+        _ahorro_este = _sug.get("ahorro_total_estimado", 0)
+        if isinstance(_dec, int):
+            # Recalcular ahorro con cajas personalizadas
+            _pct_extra = (_dec - row["Cajas"]) / max(row["Cajas"], 1)
+            _ahorro_este = _ahorro_este * min(_pct_extra / max(
+                (_sug["cajas_sugeridas"] - row["Cajas"]) / max(row["Cajas"], 1), 0.001), 1)
+
+        if _dec == "aceptar":
+            _ahorro_acumulado += _sug.get("ahorro_total_estimado", 0)
+        elif isinstance(_dec, int):
+            _ahorro_acumulado += max(_ahorro_este, 0)
+
+        # Color de fondo según decisión
+        _bg = ("#E8F8F2" if _dec == "aceptar"
+               else "#FFF0F0" if _dec == "rechazar"
+               else WHITE)
+        _border = ("#1A9E6E" if _dec == "aceptar"
+                   else "#C0392B" if _dec == "rechazar"
+                   else "#D0E4F5")
+
+        st.markdown(f"""
+<div style="background:{_bg};border:1.5px solid {_border};border-radius:12px;
+            padding:18px 22px;margin-bottom:4px;">
+  <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+    <div>
+      <span style="color:{NAVY};font-weight:700;font-size:1rem;">
+        {_pos+1}. {row['Producto']} → {row['Provincia']}
+      </span>
+      <span style="color:#5a7490;font-size:0.82rem;margin-left:10px;">
+        📅 {str(row['Fecha'])[:10]}
+      </span>
+    </div>
+    <div style="text-align:right;">
+      <span style="color:{NAVY};font-size:0.85rem;">
+        Coste actual: <b>{row['Coste_total']:.2f} €</b>
+        ({row['Cajas']} cajas · {row['Coste_por_caja']:.3f} €/caja)
+      </span>
+    </div>
+  </div>
+  <div style="margin-top:10px;background:rgba(26,46,74,0.05);
+              border-radius:8px;padding:10px 14px;">
+    🎯 <b>Sugerencia:</b> aumentar a <b>{_sug['cajas_sugeridas']} cajas</b>
+    (+{_sug['cajas_extra']} · +{_sug['pct_mas']:.1f}%) →
+    nuevo coste/caja <b>{_sug['coste_por_caja_nuevo']:.3f} €</b> ·
+    ahorro <b>{_sug['ahorro_total_estimado']:.2f} €</b><br>
+    <span style="color:#5a7490;font-size:0.82rem;">{_sug['motivo']}</span>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+        # Botones de decisión
+        _ba, _bb, _bc, _bd = st.columns([1.2, 1.2, 2, 1.5])
+        with _ba:
+            if st.button("✅ Aceptar", key=f"cmp_si_{idx}", use_container_width=True):
+                _decisiones[_dec_key] = "aceptar"
+                st.session_state["cmp_decisiones"] = _decisiones
+                st.rerun()
+        with _bb:
+            if st.button("❌ Mantener", key=f"cmp_no_{idx}", use_container_width=True):
+                _decisiones[_dec_key] = "rechazar"
+                st.session_state["cmp_decisiones"] = _decisiones
+                st.rerun()
+        with _bc:
+            _custom_val = st.number_input(
+                "Cajas personalizadas:",
+                min_value=int(row["Cajas"]),
+                max_value=100000,
+                value=int(_sug["cajas_sugeridas"]),
+                step=1,
+                key=f"cmp_custom_{idx}",
+                label_visibility="collapsed",
+            )
+        with _bd:
+            if st.button("📐 Usar este número", key=f"cmp_custom_btn_{idx}",
+                         use_container_width=True):
+                _decisiones[_dec_key] = int(_custom_val)
+                st.session_state["cmp_decisiones"] = _decisiones
+                st.rerun()
+
+        st.markdown("")
+
+    # ── Resumen en tiempo real ────────────────────────────────────────────────
+    _n_revisados  = len([d for d in _decisiones.values() if d is not None])
+    _n_aceptados  = len([d for d in _decisiones.values() if d == "aceptar"])
+    _n_custom     = len([d for d in _decisiones.values() if isinstance(d, int)])
+    _n_rechazados = len([d for d in _decisiones.values() if d == "rechazar"])
+    _nuevo_total  = coste_original - _ahorro_acumulado
+
+    st.markdown("---")
+    st.markdown(f'<p class="section-title">📊 Resumen de la negociación</p>',
+                unsafe_allow_html=True)
+
+    _rc1, _rc2, _rc3, _rc4 = st.columns(4)
+    _rc1.metric("Coste original",      f"{coste_original:,.2f} €")
+    _rc2.metric("Ahorro conseguido",   f"{_ahorro_acumulado:,.2f} €",
+                delta=f"-{_ahorro_acumulado:,.2f} €" if _ahorro_acumulado > 0 else None,
+                delta_color="inverse")
+    _rc3.metric("Nueva factura",       f"{_nuevo_total:,.2f} €")
+    _rc4.metric("Envíos ajustados",    f"{_n_aceptados + _n_custom} de {len(_mejorables)}")
+
+    # Barra de progreso del ahorro
+    _pct_ahorro = (_ahorro_acumulado / _ahorro_max_total * 100) if _ahorro_max_total > 0 else 0
+    st.markdown(f"""
+<div style="margin:8px 0 4px 0;color:{NAVY};font-size:0.85rem;font-weight:600;">
+  Ahorro conseguido: {_pct_ahorro:.0f}% del máximo posible ({_ahorro_max_total:,.2f} €)
+</div>
+<div style="background:#D0E4F5;border-radius:8px;height:12px;overflow:hidden;">
+  <div style="background:{LBLUE};width:{min(_pct_ahorro,100):.0f}%;height:100%;
+              border-radius:8px;transition:width 0.3s;"></div>
+</div>
+""", unsafe_allow_html=True)
+
+    # ── Plan ajustado y descarga ──────────────────────────────────────────────
+    if _n_aceptados + _n_custom > 0:
+        st.markdown("<br>", unsafe_allow_html=True)
+        _df_ajustado_cmp = df_env_cmp.copy()
+        for _idx2, _dec2 in _decisiones.items():
+            _real_idx = int(_idx2.replace("cmp_", ""))
+            if _dec2 == "aceptar":
+                _sug2 = df_res_cmp.at[_real_idx, "_sugerencias_full"]
+                if _sug2:
+                    _df_ajustado_cmp.at[_real_idx, "Cajas"] = _sug2[0]["cajas_sugeridas"]
+            elif isinstance(_dec2, int):
+                _df_ajustado_cmp.at[_real_idx, "Cajas"] = _dec2
+
+        _df_nuevo_cmp = logistics.analizar_hoja_envios(_df_ajustado_cmp, valor_por_caja=valor_caja)
+        _cols_exp = ["Fecha", "Producto", "Cajas", "Provincia",
+                     "Modalidad", "Coste_total", "Coste_por_caja"]
+
+        st.markdown("### 📋 Plan ajustado")
+        st.dataframe(
+            _df_nuevo_cmp[_cols_exp].style.format({
+                "Coste_total":    "{:.2f} €",
+                "Coste_por_caja": "{:.3f} €",
+            }),
+            use_container_width=True,
+        )
+
+        _buf_cmp = io.BytesIO()
+        with pd.ExcelWriter(_buf_cmp, engine="openpyxl") as _wr:
+            _df_nuevo_cmp[_cols_exp].to_excel(_wr, sheet_name="Plan optimizado", index=False)
+            df_res_cmp[_cols_exp].to_excel(_wr, sheet_name="Plan original",    index=False)
+        _buf_cmp.seek(0)
+        st.download_button(
+            "📥 Descargar plan optimizado (.xlsx)",
+            data=_buf_cmp,
+            file_name="plan_comparado_optimizado.xlsx",
+            mime=XLSX_MIME,
+            use_container_width=True,
+        )
