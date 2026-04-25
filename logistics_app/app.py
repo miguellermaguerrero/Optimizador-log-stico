@@ -855,6 +855,134 @@ def leer_envios(f) -> pd.DataFrame:
         return df
 
 
+# ─── VISTA INTEGRADA STOCK ↔ ENVÍOS ─────────────────────────────────────────
+if f_stock and f_envios:
+    st.markdown('<p class="section-title">🔗 Integración Stock → Envíos</p>',
+                unsafe_allow_html=True)
+
+    # Leer ambos archivos para la integración
+    _df_stock_int  = leer_stock(f_stock)
+    _df_envios_int = leer_envios(f_envios)
+
+    _integ = logistics.integrar_stock_envios(_df_stock_int, _df_envios_int)
+
+    # ── Alertas de stock insuficiente ─────────────────────────────────────────
+    if _integ["alertas"]:
+        for _al in _integ["alertas"]:
+            st.markdown(f"""
+<div style="background:#FFF0F0;border-left:4px solid #C0392B;border-radius:10px;
+            padding:12px 18px;margin-bottom:6px;">
+  ⚠️ <b>{_al['producto']}</b> — Stock disponible: <b>{_al['disponible']:,}</b> cajas ·
+  Planificado enviar: <b>{_al['a_enviar']:,}</b> cajas ·
+  <span style="color:#C0392B;font-weight:700;">Déficit: {_al['deficit']:,} cajas</span>
+</div>""", unsafe_allow_html=True)
+
+    # ── Tabla de stock: disponible → a enviar → restante ─────────────────────
+    _prods_con_mov = {p for p in set(_integ["cajas_a_enviar"]) if _integ["cajas_a_enviar"].get(p, 0) > 0}
+    if _prods_con_mov:
+        _rows_integ = []
+        for _p in sorted(_prods_con_mov):
+            _disp = _integ["stock_central"].get(_p, 0)
+            _env  = _integ["cajas_a_enviar"].get(_p, 0)
+            _rest = _integ["stock_restante"].get(_p, 0)
+            _rows_integ.append({
+                "Producto":         _p,
+                "Stock disponible": _disp,
+                "A enviar":         _env,
+                "Stock restante":   _rest,
+                "Estado":           "✅ OK" if _rest >= 0 else f"❌ Faltan {abs(_rest)}",
+            })
+        _df_integ = pd.DataFrame(_rows_integ)
+
+        def _color_estado(val):
+            if "❌" in str(val):
+                return "background-color:#FFF0F0;color:#C0392B;font-weight:700"
+            return "background-color:#E8F8F2;color:#1A9E6E;font-weight:700"
+
+        st.dataframe(
+            _df_integ.style.applymap(_color_estado, subset=["Estado"]),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    # ── Coste del almacén central (Madrid) sobre stock restante ──────────────
+    _dias_alm = st.number_input(
+        "Días de almacenaje en Madrid a calcular",
+        min_value=1, max_value=90, value=30, step=1,
+        key="dias_almacen_central",
+        help="Se aplica sobre el stock que QUEDA en Madrid tras los envíos planificados",
+    )
+    _coste_central = logistics.calcular_coste_almacen_central(
+        _integ["stock_restante"], dias=int(_dias_alm), valor_por_caja=valor_caja
+    )
+
+    if _coste_central["total"] > 0:
+        # Coste de los envíos (transport + regional)
+        with st.spinner("Calculando coste de envíos…"):
+            _df_res_int = logistics.analizar_hoja_envios(_df_envios_int, valor_por_caja=valor_caja)
+        _coste_envios_total = _df_res_int["Coste_total"].sum()
+        _factura_total      = _coste_central["total"] + _coste_envios_total
+
+        st.markdown(f"""
+<div style="background:linear-gradient(135deg,{NAVY} 0%,{BLUE} 100%);
+            border-radius:14px;padding:22px 28px;margin:14px 0;">
+  <div style="color:rgba(255,255,255,0.8);font-size:0.82rem;font-weight:700;
+              text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;">
+    💶 Factura logística total de la semana
+  </div>
+  <div style="display:flex;gap:32px;flex-wrap:wrap;">
+    <div>
+      <div style="color:rgba(255,255,255,0.65);font-size:0.8rem;">
+        Almacén central Madrid ({_dias_alm} días)
+      </div>
+      <div style="color:#fff;font-size:1.5rem;font-weight:700;">
+        {_coste_central['total']:,.2f} €
+      </div>
+    </div>
+    <div style="color:rgba(255,255,255,0.4);font-size:1.8rem;align-self:center;">+</div>
+    <div>
+      <div style="color:rgba(255,255,255,0.65);font-size:0.8rem;">
+        Transporte + almacén regional
+      </div>
+      <div style="color:#fff;font-size:1.5rem;font-weight:700;">
+        {_coste_envios_total:,.2f} €
+      </div>
+    </div>
+    <div style="color:rgba(255,255,255,0.4);font-size:1.8rem;align-self:center;">=</div>
+    <div>
+      <div style="color:rgba(255,255,255,0.65);font-size:0.8rem;">TOTAL</div>
+      <div style="color:#FFD700;font-size:2rem;font-weight:700;">
+        {_factura_total:,.2f} €
+      </div>
+    </div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+        # Desglose por producto del almacén central
+        with st.expander("📦 Desglose coste almacén central por producto", expanded=False):
+            _rows_mad = []
+            for _p, _d in _coste_central["por_producto"].items():
+                _rows_mad.append({
+                    "Producto":      _p,
+                    "Cajas restantes": _d["cajas"],
+                    "Volumen (m³)":  _d["volumen_m3"],
+                    "Almacenaje":    f"{_d['almacenaje']:.2f} €",
+                    "Recepción":     f"{_d['recepcion']:.2f} €",
+                    "Manipulación":  f"{_d['manipulacion']:.2f} €",
+                    "Total":         f"{_d['coste_total']:.2f} €",
+                })
+            if _rows_mad:
+                st.dataframe(pd.DataFrame(_rows_mad), use_container_width=True,
+                             hide_index=True)
+            else:
+                st.info("No hay stock restante con coste calculable en Madrid.")
+    else:
+        st.info("No hay stock restante en Madrid tras los envíos planificados, "
+                "o los productos enviados no tienen datos de dimensiones.")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
 # ─── ANÁLISIS ─────────────────────────────────────────────────────────────────
 st.markdown('<p class="section-title">📊 Análisis</p>', unsafe_allow_html=True)
 tabs = st.tabs(["📦 Stock", "📥 Llegadas", "📤 Envíos & Optimización", "💰 Comparador de precios"])

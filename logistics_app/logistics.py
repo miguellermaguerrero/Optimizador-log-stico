@@ -228,23 +228,97 @@ def coste_envio_completo(num_cajas: int, producto: dict,
     }
 
 
-# ─── Curva óptima por producto + provincia ────────────────────────────────────
+# ─── Escenarios inteligentes (basados en quiebres reales de tarifa) ──────────
 
-ESCENARIOS = [5, 10, 20, 50, 100, 150, 200, 250, 300, 400,
-               500, 700, 1000, 1500, 2000, 3000, 5000, 7000, 10000]
+def _escenarios_relevantes(producto: dict, provincia: str,
+                            zona: str, cajas_actuales: int = 0) -> list[int]:
+    """
+    Calcula los puntos exactos donde cambia la tarifa de transporte o almacén
+    para este producto y provincia concreta, asegurando que el optimizador
+    evalúa siempre los puntos de quiebre reales y no se los salta.
+    """
+    puntos: set[int] = set()
+
+    peso_kg = producto.get("peso_kg", 1.0)
+    cpale   = cajas_por_pale(producto)
+
+    # ── Base general (puntos sueltos bajos para cobertura mínima) ────────────
+    for n in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20, 25, 30, 40, 50,
+              75, 100, 150, 200, 300, 500, 750, 1000, 1500, 2000, 3000,
+              5000, 7500, 10000]:
+        puntos.add(n)
+
+    # ── Quiebres de transporte por peso → convertir kg_max a cajas ───────────
+    tabla = DATOS.get("transporte_peso", [])
+    for tramo in tabla:
+        kg_max = tramo[0]
+        # cajas que llevan exactamente al límite superior del tramo
+        cajas_tope  = max(1, math.ceil(kg_max / peso_kg))
+        cajas_antes = max(1, math.floor(kg_max / peso_kg))
+        for c in [cajas_antes - 1, cajas_antes, cajas_tope, cajas_tope + 1]:
+            if c > 0:
+                puntos.add(c)
+
+    # ── Quiebres de almacén regional ─────────────────────────────────────────
+    for cajas_max, _ in DATOS.get("almacen_regional_cajas", []):
+        for delta in [-2, -1, 0, 1, 2]:
+            c = cajas_max + delta
+            if c > 0:
+                puntos.add(c)
+
+    # ── Múltiplos de palé (cambios de nº de palés) ───────────────────────────
+    for n_pales in range(1, 16):
+        for delta in [-1, 0, 1]:
+            c = n_pales * cpale + delta
+            if c > 0:
+                puntos.add(c)
+
+    # ── Umbral de multi-palé (5 palés) ───────────────────────────────────────
+    umbral_mp = 5 * cpale
+    for delta in [-2, -1, 0, 1, 2]:
+        c = umbral_mp + delta
+        if c > 0:
+            puntos.add(c)
+
+    # ── Quiebres en cargas completas para esta provincia ─────────────────────
+    prov_up   = provincia.strip().upper()
+    prov_data = DATOS.get("cargas_completas", {}).get(prov_up, {})
+    for n_pales_tier, tier in prov_data.items():
+        cajas_tier = n_pales_tier * cpale
+        kg_max_tier = tier.get("kg_max", 0)
+        cajas_kg    = max(1, math.ceil(kg_max_tier / peso_kg)) if kg_max_tier else 0
+        for c in [cajas_tier - 1, cajas_tier, cajas_tier + 1,
+                  cajas_kg - 1, cajas_kg, cajas_kg + 1]:
+            if c > 0:
+                puntos.add(c)
+
+    # ── Asegurar que el valor actual y su entorno siempre están ──────────────
+    if cajas_actuales > 0:
+        for delta in range(-5, 51):
+            c = cajas_actuales + delta
+            if c > 0:
+                puntos.add(c)
+        # Rango hasta +50% con paso 1%
+        for pct in range(1, 51):
+            c = max(1, round(cajas_actuales * (1 + pct / 100)))
+            puntos.add(c)
+
+    return sorted(puntos)
 
 
 def curva_costes(producto: dict, provincia: str = "PENINSULA_MEDIA",
-                 zona: str = "peninsula", valor_por_caja: float = 50.0) -> pd.DataFrame:
+                 zona: str = "peninsula", valor_por_caja: float = 50.0,
+                 cajas_actuales: int = 0) -> pd.DataFrame:
+    escenarios = _escenarios_relevantes(producto, provincia, zona, cajas_actuales)
     filas = []
-    for n in ESCENARIOS:
+    for n in escenarios:
         r = coste_envio_completo(n, producto, provincia, zona, valor_por_caja)
         filas.append({
-            "cajas": n,
-            "coste_total": r["total"],
+            "cajas":          n,
+            "coste_total":    r["total"],
             "coste_por_caja": r["por_caja"],
-            "modalidad": r["transporte"]["modalidad"],
-            "num_pales": r["transporte"]["num_pales"],
+            "modalidad":      r["transporte"]["modalidad"],
+            "num_pales":      r["transporte"]["num_pales"],
             "tarifa_almacen": r["almacen"]["tarifa_caja"],
         })
     return pd.DataFrame(filas)
@@ -256,11 +330,11 @@ def punto_optimo(producto: dict, provincia: str = "PENINSULA_MEDIA",
     idx = df["coste_por_caja"].idxmin()
     row = df.loc[idx]
     return {
-        "cajas_optimas": int(row["cajas"]),
+        "cajas_optimas":  int(row["cajas"]),
         "coste_por_caja": float(row["coste_por_caja"]),
-        "coste_total": float(row["coste_total"]),
-        "modalidad": row["modalidad"],
-        "curva": df,
+        "coste_total":    float(row["coste_total"]),
+        "modalidad":      row["modalidad"],
+        "curva":          df,
     }
 
 
@@ -285,26 +359,42 @@ def analizar_envio(num_cajas: int, nombre_producto: str,
     umbral = DATOS.get("umbral_cercano_pct", UMBRAL_CERCANO_PCT)
 
     actual = coste_envio_completo(num_cajas, prod, provincia, zona, valor_por_caja, num_pedidos)
-    curva  = curva_costes(prod, provincia, zona, valor_por_caja)
+    curva  = curva_costes(prod, provincia, zona, valor_por_caja, cajas_actuales=num_cajas)
 
-    quiebres = _detectar_quiebres(curva)
+    quiebres = _detectar_quiebres(curva, cajas_actuales=num_cajas)
 
     sugerencias = []
     for q in quiebres:
         diff_cajas = q["cajas"] - num_cajas
         diff_pct   = diff_cajas / num_cajas if num_cajas > 0 else 0
         if 0 < diff_pct <= umbral:
-            ahorro_x_caja = actual["por_caja"] - q["coste_por_caja"]
-            ahorro_total  = ahorro_x_caja * q["cajas"]
-            sugerencias.append({
-                "cajas_sugeridas": q["cajas"],
-                "cajas_extra": diff_cajas,
-                "pct_mas": diff_pct * 100,
-                "coste_por_caja_nuevo": q["coste_por_caja"],
-                "ahorro_por_caja": ahorro_x_caja,
-                "ahorro_total_estimado": ahorro_total,
-                "motivo": q["motivo"],
-            })
+            # Coste real del envío ajustado
+            nuevo = coste_envio_completo(
+                q["cajas"], prod, provincia, zona, valor_por_caja, num_pedidos
+            )
+            ahorro_x_caja = actual["por_caja"] - nuevo["por_caja"]
+            # Ahorro neto: lo que ahorras en las cajas actuales
+            # menos el coste incremental de las cajas extra
+            coste_extra_solo = coste_envio_completo(
+                diff_cajas, prod, provincia, zona, valor_por_caja, num_pedidos
+            )
+            ahorro_neto = actual["total"] + coste_extra_solo["total"] - nuevo["total"]
+
+            if ahorro_x_caja > 0:   # solo sugerir si de verdad baja el coste/caja
+                sugerencias.append({
+                    "cajas_sugeridas":      q["cajas"],
+                    "cajas_extra":          diff_cajas,
+                    "pct_mas":              diff_pct * 100,
+                    "coste_por_caja_nuevo": round(nuevo["por_caja"], 4),
+                    "ahorro_por_caja":      round(ahorro_x_caja, 4),
+                    "ahorro_total_estimado": round(ahorro_neto, 2),
+                    "coste_nuevo_total":    round(nuevo["total"], 2),
+                    "motivo":              q["motivo"],
+                    "descenso_pct":        round(q["descenso_pct"], 2),
+                })
+
+    # Ordenar por ahorro neto descendente
+    sugerencias.sort(key=lambda x: x["ahorro_total_estimado"], reverse=True)
 
     opt = punto_optimo(prod, provincia, zona, valor_por_caja)
 
@@ -319,12 +409,17 @@ def analizar_envio(num_cajas: int, nombre_producto: str,
     }
 
 
-def _detectar_quiebres(curva: pd.DataFrame) -> list:
-    """Detecta los puntos donde baja coste/caja (cambios de tramo)."""
-    quiebres = []
-    prev_cporcaja  = None
-    prev_tarifa    = None
-    prev_modalidad = None
+def _detectar_quiebres(curva: pd.DataFrame, cajas_actuales: int = 0) -> list:
+    """
+    Detecta todos los puntos donde baja el coste/caja respecto al anterior,
+    identificando el motivo del quiebre (tarifa almacén, cambio de modalidad, etc.).
+    Solo devuelve quiebres con un descenso mínimo del 0.5% para evitar ruido numérico.
+    """
+    quiebres      = []
+    prev_cporcaja = None
+    prev_tarifa   = None
+    prev_mod      = None
+    prev_n        = None
 
     for _, row in curva.iterrows():
         n   = int(row["cajas"])
@@ -332,21 +427,29 @@ def _detectar_quiebres(curva: pd.DataFrame) -> list:
         tar = float(row["tarifa_almacen"])
         mod = row["modalidad"]
 
-        if prev_cporcaja is not None and cpc < prev_cporcaja:
-            motivos = []
-            if tar < prev_tarifa:
-                motivos.append(f"baja tarifa almacén ({prev_tarifa:.3f}→{tar:.3f} €/caja)")
-            if mod != prev_modalidad:
-                motivos.append(f"cambia transporte a '{mod}'")
-            quiebres.append({
-                "cajas": n,
-                "coste_por_caja": cpc,
-                "motivo": "; ".join(motivos) if motivos else "economía de escala",
-            })
+        if prev_cporcaja is not None:
+            descenso_pct = (prev_cporcaja - cpc) / prev_cporcaja if prev_cporcaja > 0 else 0
+            if cpc < prev_cporcaja and descenso_pct >= 0.005:  # ≥ 0.5% de bajada
+                motivos = []
+                if tar < (prev_tarifa or 0):
+                    motivos.append(
+                        f"baja tarifa almacén ({prev_tarifa:.3f} → {tar:.3f} €/caja)"
+                    )
+                if mod != prev_mod:
+                    motivos.append(f"cambia transporte: {prev_mod} → {mod}")
+                if not motivos:
+                    motivos.append("economía de escala")
+                quiebres.append({
+                    "cajas":            n,
+                    "coste_por_caja":   cpc,
+                    "motivo":           "; ".join(motivos),
+                    "descenso_pct":     descenso_pct * 100,
+                })
 
-        prev_cporcaja  = cpc
-        prev_tarifa    = tar
-        prev_modalidad = mod
+        prev_cporcaja = cpc
+        prev_tarifa   = tar
+        prev_mod      = mod
+        prev_n        = n
 
     return quiebres
 
@@ -376,24 +479,28 @@ def analizar_hoja_envios(df_envios: pd.DataFrame,
             sug  = res["sugerencias_ajuste"]
 
             resultados.append({
-                "Fecha":              row.get("Fecha", ""),
-                "Producto":           res["producto"],
-                "Cajas":              res["cajas"],
-                "Provincia":          res["provincia"],
-                "Modalidad":          act["transporte"]["modalidad"],
-                "Coste_transporte":   round(act["transporte"]["coste"], 2),
-                "Coste_almacen":      round(act["almacen"]["total"], 2),
-                "Coste_total":        round(act["total"], 2),
-                "Coste_por_caja":     round(act["por_caja"], 3),
-                "Optimo_cajas":       opt["cajas_optimas"],
-                "Optimo_coste_caja":  round(opt["coste_por_caja"], 3),
-                "Ahorro_potencial":   round((act["por_caja"] - opt["coste_por_caja"]) * res["cajas"], 2),
-                "Cerca_de_optimo":    len(sug) > 0,
-                "Sugerencia_cajas":   sug[0]["cajas_sugeridas"] if sug else None,
-                "Sugerencia_ahorro":  round(sug[0]["ahorro_total_estimado"], 2) if sug else None,
-                "Sugerencia_motivo":  sug[0]["motivo"] if sug else "",
-                "_sugerencias_full":  sug,
-                "_curva":             res["curva"],
+                "Fecha":             row.get("Fecha", ""),
+                "Producto":          res["producto"],
+                "Cajas":             res["cajas"],
+                "Provincia":         res["provincia"],
+                "Modalidad":         act["transporte"]["modalidad"],
+                "Coste_transporte":  round(act["transporte"]["coste"], 2),
+                "Coste_almacen":     round(act["almacen"]["total"], 2),
+                "Coste_total":       round(act["total"], 2),
+                "Coste_por_caja":    round(act["por_caja"], 3),
+                "Optimo_cajas":      opt["cajas_optimas"],
+                "Optimo_coste_caja": round(opt["coste_por_caja"], 3),
+                # Ahorro potencial máximo (vs óptimo global) solo sobre las cajas actuales
+                "Ahorro_potencial":  round(
+                    (act["por_caja"] - opt["coste_por_caja"]) * res["cajas"], 2
+                ),
+                "Cerca_de_optimo":   len(sug) > 0,
+                # La mejor sugerencia (mayor ahorro neto) va primera
+                "Sugerencia_cajas":  sug[0]["cajas_sugeridas"] if sug else None,
+                "Sugerencia_ahorro": sug[0]["ahorro_total_estimado"] if sug else None,
+                "Sugerencia_motivo": sug[0]["motivo"] if sug else "",
+                "_sugerencias_full": sug,
+                "_curva":            res["curva"],
             })
         except Exception as e:
             resultados.append({
@@ -410,3 +517,144 @@ def analizar_hoja_envios(df_envios: pd.DataFrame,
                 "_sugerencias_full": [], "_curva": None,
             })
     return pd.DataFrame(resultados)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# INTEGRACIÓN STOCK ↔ ENVÍOS
+# ══════════════════════════════════════════════════════════════════════════════
+
+def integrar_stock_envios(df_stock: "pd.DataFrame",
+                           df_envios: "pd.DataFrame") -> dict:
+    """
+    Cruza el stock actual del almacén central con los envíos planificados.
+
+    Parámetros
+    ----------
+    df_stock  : DataFrame con columna ALMACÉN y una columna por producto.
+                La fila de "Central Madrid" (o similar) es la fuente de stock.
+    df_envios : DataFrame de envíos con columnas Producto y Cajas.
+
+    Devuelve
+    --------
+    dict con:
+      stock_central      : {producto: cajas disponibles en Central Madrid}
+      cajas_a_enviar     : {producto: total cajas planificadas}
+      stock_restante     : {producto: stock_central - cajas_a_enviar}
+      alertas            : list[dict] con productos donde faltan cajas
+      productos_ok       : list[str] con productos con stock suficiente
+    """
+    # ── Identificar fila del almacén central ─────────────────────────────────
+    col_alm = "ALMACÉN" if "ALMACÉN" in df_stock.columns else df_stock.columns[0]
+    etiquetas_central = ["central madrid", "madrid", "central", "almacén central"]
+    fila_central = None
+    for _, fila in df_stock.iterrows():
+        etiqueta = str(fila[col_alm]).strip().lower()
+        if any(et in etiqueta for et in etiquetas_central):
+            fila_central = fila
+            break
+    if fila_central is None:
+        # Fallback: primera fila
+        fila_central = df_stock.iloc[0]
+
+    prod_cols = [c for c in df_stock.columns if c != col_alm]
+    stock_central: dict[str, int] = {}
+    for col in prod_cols:
+        v = fila_central.get(col, 0)
+        try:
+            stock_central[col] = max(0, int(float(v)))
+        except (TypeError, ValueError):
+            stock_central[col] = 0
+
+    # ── Agregar cajas planificadas por producto ───────────────────────────────
+    cajas_a_enviar: dict[str, int] = {}
+    if "Producto" in df_envios.columns and "Cajas" in df_envios.columns:
+        for prod, grupo in df_envios.groupby("Producto"):
+            cajas_a_enviar[str(prod)] = int(grupo["Cajas"].sum())
+
+    # ── Stock restante y alertas ──────────────────────────────────────────────
+    todos_prods = set(stock_central) | set(cajas_a_enviar)
+    stock_restante: dict[str, int] = {}
+    alertas:        list[dict]    = []
+    productos_ok:   list[str]     = []
+
+    for prod in sorted(todos_prods):
+        disponible = stock_central.get(prod, 0)
+        a_enviar   = cajas_a_enviar.get(prod, 0)
+        restante   = disponible - a_enviar
+        stock_restante[prod] = restante
+
+        if a_enviar == 0:
+            continue  # producto no planificado para envío
+        if restante < 0:
+            alertas.append({
+                "producto":   prod,
+                "disponible": disponible,
+                "a_enviar":   a_enviar,
+                "deficit":    abs(restante),
+            })
+        else:
+            productos_ok.append(prod)
+
+    return {
+        "stock_central":   stock_central,
+        "cajas_a_enviar":  cajas_a_enviar,
+        "stock_restante":  stock_restante,
+        "alertas":         alertas,
+        "productos_ok":    productos_ok,
+    }
+
+
+def calcular_coste_almacen_central(stock_restante: dict[str, int],
+                                    dias: int = 30,
+                                    valor_por_caja: float = 50.0) -> dict:
+    """
+    Calcula el coste del almacén central de Madrid sobre el stock restante
+    tras descontar los envíos planificados.
+
+    Parámetros
+    ----------
+    stock_restante : {producto: cajas_restantes}  (de integrar_stock_envios)
+    dias           : días de almacenaje a considerar (por defecto 30)
+    valor_por_caja : valor de la mercancía por caja (para seguro)
+
+    Devuelve
+    --------
+    dict con:
+      total        : coste total del almacén central
+      por_producto : {producto: dict con desglose}
+      dias         : días usados
+    """
+    productos_datos = DATOS.get("productos", {})
+    por_producto    = {}
+    total           = 0.0
+
+    for prod, cajas in stock_restante.items():
+        if cajas <= 0:
+            continue
+        prod_data = productos_datos.get(prod)
+        if prod_data is None:
+            continue
+        try:
+            coste = coste_almacen_madrid(
+                num_cajas  = cajas,
+                producto   = prod_data,
+                dias       = dias,
+                num_pedidos= 1,
+            )
+            por_producto[prod] = {
+                "cajas":        cajas,
+                "coste_total":  round(coste["total"], 2),
+                "almacenaje":   round(coste["almacenaje_m3"], 2),
+                "recepcion":    round(coste["recepcion"], 2),
+                "manipulacion": round(coste["manipulacion"], 2),
+                "volumen_m3":   round(coste["volumen_m3"], 3),
+            }
+            total += coste["total"]
+        except Exception:
+            pass
+
+    return {
+        "total":        round(total, 2),
+        "por_producto": por_producto,
+        "dias":         dias,
+    }
