@@ -19,6 +19,7 @@ from data_loader import cargar_todo, generar_plantilla_stock, generar_plantilla_
 import logistics
 import auth
 import email_sender
+import uploads_manager
 
 # ─── Configuración de página ─────────────────────────────────────────────────
 st.set_page_config(
@@ -692,21 +693,106 @@ logistics.DATOS["umbral_cercano_pct"] = umbral_sug / 100
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# ─── VISTA PREVIA INMEDIATA DEL ARCHIVO DE STOCK ─────────────────────────────
+# ─── VISTA PREVIA + GUARDADO DEL STOCK ───────────────────────────────────────
 if f_stock:
-    st.markdown('<p class="section-title">📦 Vista previa — Stock actual</p>', unsafe_allow_html=True)
-    _df_prev = pd.read_excel(f_stock)
+    st.markdown('<p class="section-title">📦 Vista previa — Stock actual</p>',
+                unsafe_allow_html=True)
+    _file_bytes = f_stock.read()
+    f_stock.seek(0)                         # rebobinar para que pd.read_excel funcione
+    _df_prev = pd.read_excel(io.BytesIO(_file_bytes))
     _df_prev.columns = _df_prev.columns.str.strip()
-    _almacenes_prev = [c for c in _df_prev.columns if c != "ALMACÉN"]
     n_filas, n_cols = _df_prev.shape
 
     _p1, _p2, _p3 = st.columns(3)
     _p1.metric("Filas (almacenes)", n_filas)
-    _p2.metric("Columnas (productos)", n_cols - 1 if "ALMACÉN" in _df_prev.columns else n_cols)
-    _p3.metric("Total cajas", f"{int(_df_prev.select_dtypes('number').sum().sum()):,}")
+    _p2.metric("Columnas (productos)",
+               n_cols - 1 if "ALMACÉN" in _df_prev.columns else n_cols)
+    _p3.metric("Total cajas",
+               f"{int(_df_prev.select_dtypes('number').sum().sum()):,}")
 
-    st.dataframe(_df_prev, use_container_width=True, height=320)
+    st.dataframe(_df_prev, use_container_width=True, height=280)
+
+    # ── Guardar con nombre ────────────────────────────────────────────────────
+    st.markdown(f"""
+<div style="background:{WHITE};border-radius:12px;padding:18px 22px;
+            border:1px solid #D0E4F5;margin-top:12px;">
+  <span style="color:{NAVY};font-weight:700;font-size:0.95rem;">
+    💾 Guardar esta subida en el historial
+  </span>
+</div>""", unsafe_allow_html=True)
+
+    _sc1, _sc2 = st.columns([3, 1])
+    with _sc1:
+        _nombre_subida = st.text_input(
+            "Nombre de la subida",
+            placeholder='Ej: "Inventario semana 17" o "Cierre abril 2026"',
+            key="nombre_subida",
+            label_visibility="collapsed",
+        )
+    with _sc2:
+        if st.button("💾 Guardar", use_container_width=True, type="primary",
+                     key="btn_guardar_stock"):
+            if not _nombre_subida.strip():
+                st.warning("Ponle un nombre antes de guardar.")
+            else:
+                _usuario_actual = st.session_state.get("usuario", "desconocido")
+                _entrada = uploads_manager.guardar_subida(
+                    _nombre_subida, _usuario_actual, _file_bytes
+                )
+                st.success(
+                    f"✅ Guardado como **{_entrada['nombre']}** "
+                    f"({_entrada['fecha']})"
+                )
+
     st.markdown("<br>", unsafe_allow_html=True)
+
+# ─── HISTORIAL DE SUBIDAS DE STOCK ───────────────────────────────────────────
+_historial = uploads_manager.get_historial()
+if _historial:
+    with st.expander(f"🗂️ Historial de subidas de stock ({len(_historial)})", expanded=False):
+        for _h in _historial:
+            _hc1, _hc2, _hc3, _hc4 = st.columns([3, 1.5, 1, 1])
+            with _hc1:
+                st.markdown(
+                    f"**{_h['nombre']}**  \n"
+                    f"<span style='color:#5a7490;font-size:0.82rem;'>"
+                    f"👤 {_h['usuario']} &nbsp;·&nbsp; 📅 {_h['fecha']}</span>",
+                    unsafe_allow_html=True,
+                )
+            with _hc2:
+                _hbytes = uploads_manager.get_bytes(_h["filename"])
+                if _hbytes:
+                    st.download_button(
+                        "⬇️ Descargar",
+                        data=_hbytes,
+                        file_name=f"{_h['nombre']}.xlsx",
+                        mime=XLSX_MIME,
+                        key=f"dl_{_h['id']}",
+                        use_container_width=True,
+                    )
+            with _hc3:
+                if st.button("📂 Cargar", key=f"load_{_h['id']}", use_container_width=True,
+                             help="Usar este archivo para el análisis"):
+                    _hbytes2 = uploads_manager.get_bytes(_h["filename"])
+                    if _hbytes2:
+                        st.session_state["stock_historial_bytes"] = _hbytes2
+                        st.session_state["stock_historial_nombre"] = _h["nombre"]
+                        st.rerun()
+            with _hc4:
+                if auth.is_admin(st.session_state.get("usuario_email", "")):
+                    if st.button("🗑️", key=f"del_{_h['id']}", use_container_width=True,
+                                 help="Eliminar del historial"):
+                        uploads_manager.eliminar_subida(_h["filename"])
+                        st.rerun()
+            st.divider()
+
+    # Si se ha seleccionado un archivo del historial, usarlo como f_stock activo
+    if "stock_historial_bytes" in st.session_state and not f_stock:
+        _nombre_hist = st.session_state.get("stock_historial_nombre", "historial")
+        st.info(f"📂 Usando subida del historial: **{_nombre_hist}**")
+        f_stock = io.BytesIO(st.session_state["stock_historial_bytes"])
+
+st.markdown("<br>", unsafe_allow_html=True)
 
 # ─── PANTALLA SIN DATOS ───────────────────────────────────────────────────────
 if not f_stock and not f_llegadas and not f_envios:
