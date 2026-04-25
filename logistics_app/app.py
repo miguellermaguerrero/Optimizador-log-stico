@@ -1036,7 +1036,7 @@ with tabs[0]:
     x = np.arange(len(df_stock))
     bottom = np.zeros(len(df_stock))
     for i, alm in enumerate(almacenes):
-        vals = df_stock[alm].fillna(0).values
+        vals = pd.to_numeric(df_stock[alm], errors="coerce").fillna(0).to_numpy(dtype=float)
         ax.bar(x, vals, bottom=bottom, label=alm,
                color=PALETTE[i % len(PALETTE)], width=0.6)
         bottom += vals
@@ -1076,9 +1076,11 @@ with tabs[1]:
     fig, ax = plt.subplots(figsize=(10, 4))
     fig.patch.set_facecolor("white")
     for i, col in enumerate(pivot.columns):
-        ax.bar(pivot.index, pivot[col], label=col,
+        vals_col   = pivot[col].to_numpy(dtype=float)
+        bottom_col = pivot[pivot.columns[:i]].sum(axis=1).to_numpy(dtype=float) if i > 0 else None
+        ax.bar(pivot.index, vals_col, label=col,
                color=PALETTE[i % len(PALETTE)], alpha=0.9,
-               bottom=pivot[pivot.columns[:i]].sum(axis=1) if i > 0 else None)
+               bottom=bottom_col)
     ax.set_xlabel("Fecha")
     ax.set_ylabel("Cajas")
     ax.set_title("Cajas recibidas por fecha y producto", color=NAVY, fontweight="bold")
