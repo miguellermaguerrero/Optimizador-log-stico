@@ -23,7 +23,7 @@ import uploads_manager
 
 # ─── Configuración de página ─────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Debajo del hórreo",
+    page_title="Bajo el hórreo",
     page_icon="🏪",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -92,7 +92,7 @@ def _pantalla_reset_token(token: str) -> None:
     _logo_path = Path(__file__).parent / "logo.png"
     _logo_b64  = base64.b64encode(_logo_path.read_bytes()).decode() if _logo_path.exists() else ""
     _logo_tag  = (f'<img src="data:image/png;base64,{_logo_b64}" '
-                  f'style="height:100px;margin-bottom:12px;">') if _logo_b64 else "🏪"
+                  f'style="height:180px;margin-bottom:12px;">') if _logo_b64 else "🏪"
     _cabecera_auth(_logo_tag)
 
     _, col, _ = st.columns([1, 2, 1])
@@ -137,7 +137,7 @@ def _pantalla_auth() -> None:
     _logo_path = Path(__file__).parent / "logo.png"
     _logo_b64  = base64.b64encode(_logo_path.read_bytes()).decode() if _logo_path.exists() else ""
     _logo_tag  = (f'<img src="data:image/png;base64,{_logo_b64}" '
-                  f'style="height:140px;margin-bottom:16px;">') if _logo_b64 else "🏪"
+                  f'style="height:200px;margin-bottom:16px;">') if _logo_b64 else "🏪"
     _cabecera_auth(_logo_tag)
 
     _, col, _ = st.columns([1, 2, 1])
