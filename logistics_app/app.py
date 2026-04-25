@@ -677,18 +677,22 @@ st.markdown("<br>", unsafe_allow_html=True)
 
 # ─── PARÁMETROS ───────────────────────────────────────────────────────────────
 with st.expander("⚙️ Parámetros de análisis", expanded=False):
-    p1, p2, p3 = st.columns([1, 1, 2])
+    p1, p2 = st.columns([1, 2])
     with p1:
-        valor_caja = st.number_input("Valor por caja (€)", min_value=1.0,
-                                     max_value=5000.0, value=50.0, step=5.0)
+        umbral_sug = st.slider(
+            "Margen de ajuste sugerido (%)", 5, 50, 20,
+            help=(
+                "Si añadiendo hasta este % más de cajas a un envío se consigue "
+                "un precio por caja más barato (cambio de tramo), la app lo sugiere. "
+                "Con 20% solo propone ajustes de hasta +20% de cajas."
+            ),
+        )
     with p2:
-        umbral_sug = st.slider("Umbral 'cerca del óptimo' (%)", 5, 50, 20,
-                               help="Si añadiendo hasta X% más de cajas se baja de tramo, se sugiere el ajuste")
-    with p3:
         if _productos_disponibles:
-            st.markdown("**Productos en catálogo:**")
+            st.markdown("**Productos en catálogo** (el valor de cada uno viene de tu Excel de catálogo):")
             st.caption(" · ".join(_productos_disponibles))
 
+valor_caja = None   # se usa el valor_caja del catálogo por producto
 logistics.DATOS["umbral_cercano_pct"] = umbral_sug / 100
 
 st.markdown("<br>", unsafe_allow_html=True)
@@ -913,13 +917,13 @@ if f_stock and f_envios:
         help="Se aplica sobre el stock que QUEDA en Madrid tras los envíos planificados",
     )
     _coste_central = logistics.calcular_coste_almacen_central(
-        _integ["stock_restante"], dias=int(_dias_alm), valor_por_caja=valor_caja
+        _integ["stock_restante"], dias=int(_dias_alm), valor_por_caja=None
     )
 
     if _coste_central["total"] > 0:
         # Coste de los envíos (transport + regional)
         with st.spinner("Calculando coste de envíos…"):
-            _df_res_int = logistics.analizar_hoja_envios(_df_envios_int, valor_por_caja=valor_caja)
+            _df_res_int = logistics.analizar_hoja_envios(_df_envios_int, valor_por_caja=None)
         _coste_envios_total = _df_res_int["Coste_total"].sum()
         _factura_total      = _coste_central["total"] + _coste_envios_total
 
@@ -1078,7 +1082,7 @@ with tabs[2]:
     df_envios_raw = leer_envios(f_envios)
 
     with st.spinner("Calculando costes y optimizaciones…"):
-        df_result = logistics.analizar_hoja_envios(df_envios_raw, valor_por_caja=valor_caja)
+        df_result = logistics.analizar_hoja_envios(df_envios_raw, valor_por_caja=None)
 
     total_coste   = df_result["Coste_total"].sum()
     total_cajas_e = df_result["Cajas"].sum()
@@ -1179,7 +1183,7 @@ Coste total: <b>{row['Coste_total']:.2f} €</b>
                 if ajuste["decision"] != "rechazado":
                     df_ajustado.at[idx, "Cajas"] = ajuste["cajas_nuevas"]
 
-            df_nuevo    = logistics.analizar_hoja_envios(df_ajustado, valor_por_caja=valor_caja)
+            df_nuevo    = logistics.analizar_hoja_envios(df_ajustado, valor_por_caja=None)
             nuevo_total = df_nuevo["Coste_total"].sum()
             ahorro_real = total_coste - nuevo_total
 
@@ -1300,7 +1304,7 @@ with tabs[3]:
         "🔄 Recalcular", key="cmp_recalc", help="Vuelve a leer el archivo de envíos"
     ):
         _df_env_cmp = leer_envios(f_envios)
-        _df_res_cmp = logistics.analizar_hoja_envios(_df_env_cmp, valor_por_caja=valor_caja)
+        _df_res_cmp = logistics.analizar_hoja_envios(_df_env_cmp, valor_por_caja=None)
         st.session_state["df_result_cmp"]  = _df_res_cmp
         st.session_state["df_envios_cmp"]  = _df_env_cmp
         st.session_state["cmp_decisiones"] = {}
@@ -1505,7 +1509,7 @@ with tabs[3]:
             elif isinstance(_dec2, int):
                 _df_ajustado_cmp.at[_real_idx, "Cajas"] = _dec2
 
-        _df_nuevo_cmp = logistics.analizar_hoja_envios(_df_ajustado_cmp, valor_por_caja=valor_caja)
+        _df_nuevo_cmp = logistics.analizar_hoja_envios(_df_ajustado_cmp, valor_por_caja=None)
         _cols_exp = ["Fecha", "Producto", "Cajas", "Provincia",
                      "Modalidad", "Coste_total", "Coste_por_caja"]
 

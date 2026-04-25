@@ -215,8 +215,11 @@ def coste_almacen_madrid(num_cajas: int, producto: dict,
 
 def coste_envio_completo(num_cajas: int, producto: dict,
                           provincia: str, zona: str = "peninsula",
-                          valor_por_caja: float = 50.0,
+                          valor_por_caja: float | None = None,
                           num_pedidos: int = 1) -> dict:
+    # Usar el valor del catálogo si no se pasa uno explícito
+    if valor_por_caja is None or valor_por_caja <= 0:
+        valor_por_caja = producto.get("valor_caja", 50.0)
     tr  = calcular_transporte(num_cajas, producto, provincia, zona)
     alm = coste_almacen_regional(num_cajas, num_cajas * valor_por_caja, num_pedidos)
     total = tr["coste"] + alm["total"]
@@ -225,6 +228,7 @@ def coste_envio_completo(num_cajas: int, producto: dict,
         "por_caja": total / num_cajas if num_cajas > 0 else 0,
         "transporte": tr,
         "almacen": alm,
+        "valor_por_caja": valor_por_caja,
     }
 
 
@@ -307,7 +311,7 @@ def _escenarios_relevantes(producto: dict, provincia: str,
 
 
 def curva_costes(producto: dict, provincia: str = "PENINSULA_MEDIA",
-                 zona: str = "peninsula", valor_por_caja: float = 50.0,
+                 zona: str = "peninsula", valor_por_caja: float | None = None,
                  cajas_actuales: int = 0) -> pd.DataFrame:
     escenarios = _escenarios_relevantes(producto, provincia, zona, cajas_actuales)
     filas = []
@@ -325,7 +329,7 @@ def curva_costes(producto: dict, provincia: str = "PENINSULA_MEDIA",
 
 
 def punto_optimo(producto: dict, provincia: str = "PENINSULA_MEDIA",
-                 zona: str = "peninsula", valor_por_caja: float = 50.0) -> dict:
+                 zona: str = "peninsula", valor_por_caja: float | None = None) -> dict:
     df  = curva_costes(producto, provincia, zona, valor_por_caja)
     idx = df["coste_por_caja"].idxmin()
     row = df.loc[idx]
@@ -342,7 +346,7 @@ def punto_optimo(producto: dict, provincia: str = "PENINSULA_MEDIA",
 
 def analizar_envio(num_cajas: int, nombre_producto: str,
                    provincia: str, zona: str = "peninsula",
-                   valor_por_caja: float = 50.0,
+                   valor_por_caja: float | None = None,
                    num_pedidos: int = 1) -> dict:
     """
     Calcula el coste de un envío y detecta si está lejos de un punto óptimo.
@@ -457,7 +461,8 @@ def _detectar_quiebres(curva: pd.DataFrame, cajas_actuales: int = 0) -> list:
 # ─── Análisis de toda la hoja de envíos ──────────────────────────────────────
 
 def analizar_hoja_envios(df_envios: pd.DataFrame,
-                          valor_por_caja: float = 50.0) -> pd.DataFrame:
+                          valor_por_caja: float | None = None) -> pd.DataFrame:
+    """valor_por_caja=None → usa el valor del catálogo de cada producto."""
     """
     Recibe el DataFrame de envíos y devuelve uno enriquecido con
     costes, óptimos y alertas de ajuste.
@@ -606,7 +611,8 @@ def integrar_stock_envios(df_stock: "pd.DataFrame",
 
 def calcular_coste_almacen_central(stock_restante: dict[str, int],
                                     dias: int = 30,
-                                    valor_por_caja: float = 50.0) -> dict:
+                                    valor_por_caja: float | None = None) -> dict:
+    """valor_por_caja=None → usa el valor del catálogo de cada producto."""
     """
     Calcula el coste del almacén central de Madrid sobre el stock restante
     tras descontar los envíos planificados.
