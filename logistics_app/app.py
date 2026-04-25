@@ -1025,7 +1025,7 @@ with tabs[0]:
 
     almacenes = [c for c in df_stock.columns if c != "Producto"]
     st.markdown("### Resumen por almacén")
-    totales   = df_stock[almacenes].sum()
+    totales   = df_stock[almacenes].apply(pd.to_numeric, errors="coerce").fillna(0).sum()
     cols_alm  = st.columns(min(len(almacenes), 5))
     for i, (alm, tot) in enumerate(totales.items()):
         cols_alm[i % len(cols_alm)].metric(alm, f"{int(tot):,} cajas")
