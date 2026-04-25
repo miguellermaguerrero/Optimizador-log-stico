@@ -1023,25 +1023,33 @@ with tabs[0]:
     st.subheader("📦 Stock actual por almacén")
     st.dataframe(df_stock, use_container_width=True)
 
-    almacenes = [c for c in df_stock.columns if c != "Producto"]
-    st.markdown("### Resumen por almacén")
-    totales   = df_stock[almacenes].apply(pd.to_numeric, errors="coerce").fillna(0).sum()
-    cols_alm  = st.columns(min(len(almacenes), 5))
-    for i, (alm, tot) in enumerate(totales.items()):
-        cols_alm[i % len(cols_alm)].metric(alm, f"{int(tot):,} cajas")
+    # Estructura: filas = almacenes, columnas = ALMACÉN + productos
+    _col_alm  = "ALMACÉN" if "ALMACÉN" in df_stock.columns else df_stock.columns[0]
+    _prod_cols = [c for c in df_stock.columns if c != _col_alm]
+    _df_num   = df_stock.set_index(_col_alm)[_prod_cols].apply(
+        pd.to_numeric, errors="coerce"
+    ).fillna(0)
 
+    # Métricas: total por almacén (suma de todos sus productos)
+    st.markdown("### Resumen por almacén")
+    _totales_alm = _df_num.sum(axis=1)
+    _cols_alm_ui = st.columns(min(len(_totales_alm), 5))
+    for _i, (_alm_name, _tot) in enumerate(_totales_alm.items()):
+        _cols_alm_ui[_i % len(_cols_alm_ui)].metric(_alm_name, f"{int(_tot):,} cajas")
+
+    # Gráfico: eje X = productos, barras apiladas por almacén
     st.markdown("### Distribución de stock")
     fig, ax = plt.subplots(figsize=(10, 4))
     fig.patch.set_facecolor("white")
-    x = np.arange(len(df_stock))
-    bottom = np.zeros(len(df_stock))
-    for i, alm in enumerate(almacenes):
-        vals = pd.to_numeric(df_stock[alm], errors="coerce").fillna(0).to_numpy(dtype=float)
-        ax.bar(x, vals, bottom=bottom, label=alm,
-               color=PALETTE[i % len(PALETTE)], width=0.6)
+    x      = np.arange(len(_prod_cols))
+    bottom = np.zeros(len(_prod_cols))
+    for _i, _alm_name in enumerate(_df_num.index):
+        vals = _df_num.loc[_alm_name].to_numpy(dtype=float)
+        ax.bar(x, vals, bottom=bottom, label=_alm_name,
+               color=PALETTE[_i % len(PALETTE)], width=0.6)
         bottom += vals
     ax.set_xticks(x)
-    ax.set_xticklabels(df_stock["Producto"].tolist(), fontsize=9)
+    ax.set_xticklabels(_prod_cols, fontsize=9, rotation=20, ha="right")
     ax.set_ylabel("Cajas")
     ax.set_title("Stock por producto y almacén", color=NAVY, fontweight="bold")
     ax.legend(loc="upper right", fontsize=8)
@@ -1049,6 +1057,7 @@ with tabs[0]:
     ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda v, _: f"{v:,.0f}"))
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
+    plt.tight_layout()
     st.pyplot(fig)
     plt.close()
 
