@@ -18,6 +18,7 @@ from config import TARIFAS_PATH, CATALOGO_PATH, UMBRAL_CERCANO_PCT
 from data_loader import cargar_todo, generar_plantilla_stock, generar_plantilla_llegadas, generar_plantilla_envios
 import logistics
 import auth
+import email_sender
 
 # ─── Configuración de página ─────────────────────────────────────────────────
 st.set_page_config(
@@ -31,15 +32,8 @@ st.set_page_config(
 NAVY_AUTH  = "#1A2E4A"
 WHITE_AUTH = "#FFFFFF"
 
-def _pantalla_auth():
-    """Muestra login / registro y detiene la ejecución hasta que el usuario acceda."""
-
-    # Logo en la pantalla de login
-    _logo_path = Path(__file__).parent / "logo.png"
-    _logo_b64  = base64.b64encode(_logo_path.read_bytes()).decode() if _logo_path.exists() else ""
-    _logo_tag  = (f'<img src="data:image/png;base64,{_logo_b64}" '
-                  f'style="height:140px;margin-bottom:16px;">') if _logo_b64 else "🏪"
-
+def _cabecera_auth(logo_tag: str) -> None:
+    """Renderiza el CSS y la caja de cabecera de la pantalla de auth."""
     st.markdown(f"""
 <style>
 .stApp {{ background: {NAVY_AUTH}; }}
@@ -48,16 +42,14 @@ def _pantalla_auth():
 .auth-box {{
     background: {WHITE_AUTH};
     border-radius: 18px;
-    padding: 40px 44px;
-    max-width: 420px;
-    margin: 60px auto 0 auto;
+    padding: 36px 44px 28px 44px;
+    max-width: 440px;
+    margin: 50px auto 0 auto;
     box-shadow: 0 8px 40px rgba(0,0,0,0.25);
     text-align: center;
 }}
 .auth-box h2 {{ color: {NAVY_AUTH}; margin: 0 0 4px 0; font-size: 1.6rem; }}
-.auth-box p  {{ color: #5a7490; margin: 0 0 24px 0; font-size: 0.9rem; }}
-
-/* Botón azul claro */
+.auth-box p  {{ color: #5a7490; margin: 0 0 20px 0; font-size: 0.9rem; }}
 .stButton > button[kind="primary"] {{
     background: #4A7AB5 !important;
     border: none !important;
@@ -67,50 +59,171 @@ def _pantalla_auth():
 .stButton > button[kind="primary"]:hover {{
     background: #2E5F8A !important;
 }}
-
-/* Radio labels en blanco */
 div[data-testid="stRadio"] label p {{
     color: {WHITE_AUTH} !important;
     font-weight: 600;
     font-size: 1rem;
 }}
+/* Enlace olvidé contraseña */
+.forgot-link button {{
+    background: none !important;
+    border: none !important;
+    color: #4A7AB5 !important;
+    font-size: 0.85rem !important;
+    padding: 0 !important;
+    text-decoration: underline !important;
+    cursor: pointer;
+    box-shadow: none !important;
+}}
 </style>
 <div class="auth-box">
-  {_logo_tag}
+  {logo_tag}
   <h2>Debajo del hórreo</h2>
   <p>Gestión logística · Acceso privado</p>
 </div>
 """, unsafe_allow_html=True)
 
-    # Centrar el formulario
+
+def _pantalla_reset_token(token: str) -> None:
+    """Página de cambio de contraseña cuando el usuario llega desde el enlace del email."""
+    ok, result = auth.verify_reset_token(token)
+
+    _logo_path = Path(__file__).parent / "logo.png"
+    _logo_b64  = base64.b64encode(_logo_path.read_bytes()).decode() if _logo_path.exists() else ""
+    _logo_tag  = (f'<img src="data:image/png;base64,{_logo_b64}" '
+                  f'style="height:100px;margin-bottom:12px;">') if _logo_b64 else "🏪"
+    _cabecera_auth(_logo_tag)
+
     _, col, _ = st.columns([1, 2, 1])
     with col:
-        modo = st.radio("", ["Iniciar sesión", "Crear cuenta"],
-                        horizontal=True, label_visibility="collapsed")
+        if not ok:
+            st.error(f"⚠️ {result}")
+            st.markdown(
+                "<p style='color:#fff;text-align:center;font-size:0.9rem;margin-top:12px;'>"
+                "Este enlace no es válido o ha caducado (1 hora).<br>"
+                "Solicita uno nuevo desde la pantalla de inicio.</p>",
+                unsafe_allow_html=True,
+            )
+        else:
+            email = result
+            st.markdown(
+                f"<p style='color:#fff;text-align:center;font-size:0.9rem;margin-top:8px;'>"
+                f"Cambiando contraseña para <b>{email}</b></p>",
+                unsafe_allow_html=True,
+            )
+            np1 = st.text_input("Nueva contraseña", type="password",
+                                placeholder="Mínimo 6 caracteres", key="np1")
+            np2 = st.text_input("Repite la nueva contraseña", type="password",
+                                placeholder="••••••••", key="np2")
+            if st.button("Guardar nueva contraseña", use_container_width=True, type="primary"):
+                if not np1 or not np2:
+                    st.warning("Rellena ambos campos.")
+                elif np1 != np2:
+                    st.error("Las contraseñas no coinciden.")
+                else:
+                    ok2, msg2 = auth.consume_reset_token(token, np1)
+                    if ok2:
+                        st.success(f"✅ {msg2}")
+                        # Limpiar el token de la URL y redirigir al login
+                        st.query_params.clear()
+                    else:
+                        st.error(msg2)
+    st.stop()
+
+
+def _pantalla_auth() -> None:
+    """Muestra login / registro y detiene la ejecución hasta que el usuario acceda."""
+    _logo_path = Path(__file__).parent / "logo.png"
+    _logo_b64  = base64.b64encode(_logo_path.read_bytes()).decode() if _logo_path.exists() else ""
+    _logo_tag  = (f'<img src="data:image/png;base64,{_logo_b64}" '
+                  f'style="height:140px;margin-bottom:16px;">') if _logo_b64 else "🏪"
+    _cabecera_auth(_logo_tag)
+
+    _, col, _ = st.columns([1, 2, 1])
+    with col:
+        _vista = st.session_state.get("auth_vista", "login")
+
+        # ── FORMULARIO DE OLVIDÉ CONTRASEÑA ──────────────────────────────────
+        if _vista == "forgot":
+            st.markdown(
+                f"<p style='color:{WHITE_AUTH};font-weight:700;font-size:1.05rem;"
+                f"text-align:center;margin-bottom:4px;'>🔑 Recuperar contraseña</p>"
+                f"<p style='color:rgba(255,255,255,0.7);font-size:0.85rem;"
+                f"text-align:center;margin-bottom:14px;'>"
+                f"Te enviaremos un enlace a tu correo para elegir una nueva contraseña.</p>",
+                unsafe_allow_html=True,
+            )
+            f_email = st.text_input("Tu correo electrónico", placeholder="tu@correo.com",
+                                    key="forgot_email")
+            _fa, _fb = st.columns([2, 1])
+            with _fa:
+                if st.button("Enviar enlace", use_container_width=True, type="primary"):
+                    if not f_email:
+                        st.warning("Introduce tu correo.")
+                    else:
+                        # Generamos token (siempre decimos que se envió para no revelar emails)
+                        _, token_or_dummy = auth.generate_reset_token(f_email)
+                        if token_or_dummy != "__not_found__":
+                            sent_ok, err = email_sender.send_reset_email(f_email, token_or_dummy)
+                            if not sent_ok:
+                                st.error(f"No se pudo enviar el correo: {err}")
+                            else:
+                                st.success("📬 Enlace enviado. Revisa tu bandeja de entrada (y la carpeta de spam).")
+                        else:
+                            # Igual mostramos éxito para no revelar si el correo existe
+                            st.success("📬 Si ese correo está registrado, recibirás el enlace en breve.")
+            with _fb:
+                if st.button("← Volver", use_container_width=True, key="back_forgot"):
+                    st.session_state["auth_vista"] = "login"
+                    st.rerun()
+            st.stop()
+
+        # ── SELECTOR LOGIN / CREAR CUENTA ─────────────────────────────────────
+        _tab = st.radio("", ["Iniciar sesión", "Crear cuenta"],
+                        horizontal=True, label_visibility="collapsed",
+                        key="auth_tab")
         st.markdown("")
 
-        if modo == "Iniciar sesión":
-            email    = st.text_input("Correo electrónico", placeholder="tu@correo.com")
-            password = st.text_input("Contraseña", type="password", placeholder="••••••••")
-            if st.button("Entrar", use_container_width=True, type="primary"):
+        # ── INICIAR SESIÓN ────────────────────────────────────────────────────
+        if _tab == "Iniciar sesión":
+            email    = st.text_input("Correo electrónico", placeholder="tu@correo.com",
+                                     key="li_email")
+            password = st.text_input("Contraseña", type="password",
+                                     placeholder="••••••••", key="li_pass")
+            if st.button("Entrar", use_container_width=True, type="primary", key="btn_login"):
                 if email and password:
                     ok, msg = auth.login(email, password)
                     if ok:
-                        st.session_state["usuario"] = msg   # nombre o email
+                        st.session_state["usuario"]       = msg
+                        st.session_state["usuario_email"] = email.strip().lower()
+                        st.session_state.pop("auth_vista", None)
                         st.rerun()
                     else:
                         st.error(msg)
                 else:
                     st.warning("Introduce correo y contraseña.")
 
-        else:  # Crear cuenta
-            nombre   = st.text_input("Nombre", placeholder="Tu nombre")
-            email    = st.text_input("Correo electrónico", placeholder="tu@correo.com")
-            password = st.text_input("Contraseña", type="password",
-                                     placeholder="Mínimo 6 caracteres")
+            # Enlace sutil "¿Has olvidado la contraseña?"
+            st.markdown(
+                f"<div style='text-align:center;margin-top:6px;'>",
+                unsafe_allow_html=True,
+            )
+            if st.button("¿Has olvidado la contraseña?", key="btn_forgot"):
+                st.session_state["auth_vista"] = "forgot"
+                st.rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        # ── CREAR CUENTA ──────────────────────────────────────────────────────
+        else:
+            nombre    = st.text_input("Nombre", placeholder="Tu nombre", key="reg_nombre")
+            email     = st.text_input("Correo electrónico", placeholder="tu@correo.com",
+                                      key="reg_email")
+            password  = st.text_input("Contraseña", type="password",
+                                      placeholder="Mínimo 6 caracteres", key="reg_pass")
             password2 = st.text_input("Repite la contraseña", type="password",
-                                      placeholder="••••••••")
-            if st.button("Crear cuenta", use_container_width=True, type="primary"):
+                                      placeholder="••••••••", key="reg_pass2")
+            if st.button("Crear cuenta", use_container_width=True, type="primary",
+                         key="btn_registro"):
                 if not (nombre and email and password and password2):
                     st.warning("Rellena todos los campos.")
                 elif password != password2:
@@ -118,14 +231,22 @@ div[data-testid="stRadio"] label p {{
                 else:
                     ok, msg = auth.registrar(email, password, nombre)
                     if ok:
-                        st.success(msg)
+                        if "pendiente" in msg or "administrador" in msg.lower():
+                            st.info(f"✅ {msg}")
+                        else:
+                            st.success(msg)
                     else:
                         st.error(msg)
 
     st.stop()
 
 
-# Comprobar sesión
+# ── Comprobar si la URL lleva un token de reset ───────────────────────────────
+_reset_token = st.query_params.get("reset_token", "")
+if _reset_token:
+    _pantalla_reset_token(_reset_token)
+
+# ── Comprobar sesión ──────────────────────────────────────────────────────────
 if "usuario" not in st.session_state:
     _pantalla_auth()
 
@@ -134,8 +255,142 @@ with st.container():
     _, _btn_col = st.columns([8, 1])
     with _btn_col:
         if st.button("Salir 🔒", help="Cerrar sesión"):
-            del st.session_state["usuario"]
+            for _k in ["usuario", "usuario_email"]:
+                st.session_state.pop(_k, None)
             st.rerun()
+
+# ─── PANEL DE ADMINISTRACIÓN (solo admin) ────────────────────────────────────
+_email_sesion = st.session_state.get("usuario_email", "")
+if auth.is_admin(_email_sesion):
+    st.markdown("---")
+    st.markdown(f"""
+<div style="background:#1A2E4A;border-radius:14px;padding:18px 28px;margin-bottom:18px;">
+  <span style="color:#fff;font-size:1.15rem;font-weight:700;">🔑 Panel de administración</span>
+  <span style="color:rgba(255,255,255,0.65);font-size:0.85rem;margin-left:12px;">
+    {_email_sesion}
+  </span>
+</div>
+""", unsafe_allow_html=True)
+
+    _tab_pend, _tab_reset, _tab_usuarios = st.tabs([
+        "⏳ Solicitudes de acceso",
+        "🔑 Recuperaciones de contraseña",
+        "👥 Todos los usuarios",
+    ])
+
+    # ── Solicitudes pendientes ────────────────────────────────────────────────
+    with _tab_pend:
+        _pending = auth.get_pending_users()
+        if not _pending:
+            st.success("✅ No hay solicitudes pendientes.")
+        else:
+            st.markdown(f"**{len(_pending)} solicitud(es) esperando tu aprobación:**")
+            for _u in _pending:
+                _col_info, _col_apr, _col_rec = st.columns([3, 1, 1])
+                with _col_info:
+                    st.markdown(
+                        f"**{_u['nombre'] or '(sin nombre)'}**  \n"
+                        f"<span style='color:#5a7490;font-size:0.85rem'>{_u['email']}</span>",
+                        unsafe_allow_html=True,
+                    )
+                with _col_apr:
+                    if st.button("✅ Aprobar", key=f"apr_{_u['email']}", use_container_width=True):
+                        auth.approve_user(_u["email"])
+                        st.success(f"Aprobado: {_u['email']}")
+                        st.rerun()
+                with _col_rec:
+                    if st.button("❌ Rechazar", key=f"rec_{_u['email']}", use_container_width=True):
+                        auth.reject_user(_u["email"])
+                        st.warning(f"Rechazado: {_u['email']}")
+                        st.rerun()
+                st.divider()
+
+    # ── Recuperaciones de contraseña pendientes ───────────────────────────────
+    with _tab_reset:
+        _resets = auth.get_reset_requests()
+        if not _resets:
+            st.success("✅ No hay solicitudes de cambio de contraseña pendientes.")
+        else:
+            st.markdown(f"**{len(_resets)} solicitud(es) de nueva contraseña:**")
+            for _u in _resets:
+                _col_info, _col_apr, _col_rec = st.columns([3, 1, 1])
+                with _col_info:
+                    st.markdown(
+                        f"**{_u['nombre'] or '(sin nombre)'}**  \n"
+                        f"<span style='color:#5a7490;font-size:0.85rem'>{_u['email']}</span>",
+                        unsafe_allow_html=True,
+                    )
+                with _col_apr:
+                    if st.button("✅ Aprobar", key=f"rapr_{_u['email']}", use_container_width=True):
+                        auth.approve_reset(_u["email"])
+                        st.success(f"Contraseña actualizada: {_u['email']}")
+                        st.rerun()
+                with _col_rec:
+                    if st.button("❌ Rechazar", key=f"rrec_{_u['email']}", use_container_width=True):
+                        auth.reject_reset(_u["email"])
+                        st.warning(f"Solicitud descartada: {_u['email']}")
+                        st.rerun()
+                st.divider()
+
+    # ── Todos los usuarios ────────────────────────────────────────────────────
+    with _tab_usuarios:
+        _all = auth.get_all_users()
+        _STATUS_LABEL = {
+            "approved": "✅ Aprobado",
+            "pending":  "⏳ Pendiente",
+            "rejected": "❌ Rechazado",
+        }
+        if not _all:
+            st.info("Aún no hay usuarios registrados.")
+        else:
+            for _u in _all:
+                _is_me = _u["email"] == auth.ADMIN_EMAIL
+                _col_i, _col_s, _col_act = st.columns([3, 1.2, 1.4])
+                with _col_i:
+                    _reset_badge = "  🔑 *reset pendiente*" if _u.get("pending_reset") else ""
+                    st.markdown(
+                        f"**{_u['nombre'] or '(sin nombre)'}**{_reset_badge}  \n"
+                        f"<span style='color:#5a7490;font-size:0.85rem'>{_u['email']}"
+                        f"{'  👑 admin' if _is_me else ''}</span>",
+                        unsafe_allow_html=True,
+                    )
+                with _col_s:
+                    _sl = _STATUS_LABEL.get(_u["status"], _u["status"])
+                    st.markdown(f"<br><span style='font-size:0.9rem'>{_sl}</span>",
+                                unsafe_allow_html=True)
+                with _col_act:
+                    if not _is_me:
+                        if _u["status"] == "approved":
+                            if st.button("🚫 Suspender", key=f"sus_{_u['email']}", use_container_width=True):
+                                auth.reject_user(_u["email"])
+                                st.rerun()
+                        elif _u["status"] in ("pending", "rejected"):
+                            if st.button("✅ Activar", key=f"act_{_u['email']}", use_container_width=True):
+                                auth.approve_user(_u["email"])
+                                st.rerun()
+                        if st.button("🗑️ Eliminar", key=f"del_{_u['email']}", use_container_width=True):
+                            auth.delete_user(_u["email"])
+                            st.rerun()
+                    # Establecer contraseña manual (disponible para todos, incluido admin)
+                    with st.expander("🔐 Cambiar contraseña", expanded=False):
+                        _np1 = st.text_input("Nueva contraseña", type="password",
+                                             key=f"np1_{_u['email']}", placeholder="Mín. 6 caracteres")
+                        _np2 = st.text_input("Repite", type="password",
+                                             key=f"np2_{_u['email']}", placeholder="••••••••")
+                        if st.button("Guardar", key=f"npbtn_{_u['email']}", use_container_width=True):
+                            if not _np1 or not _np2:
+                                st.warning("Rellena ambos campos.")
+                            elif _np1 != _np2:
+                                st.error("No coinciden.")
+                            elif len(_np1) < 6:
+                                st.error("Mínimo 6 caracteres.")
+                            else:
+                                auth.set_password(_u["email"], _np1)
+                                st.success("✅ Contraseña actualizada.")
+                                st.rerun()
+                st.divider()
+
+    st.markdown("---")
 
 # ─── Carga de tarifas y catálogo desde Excel (cacheado) ──────────────────────
 @st.cache_resource(show_spinner="Cargando tarifas y catálogo…")
