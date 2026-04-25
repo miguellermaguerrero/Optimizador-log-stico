@@ -47,17 +47,24 @@ def volumen_m3_caja(producto: dict) -> float:
 
 # ─── Transporte ──────────────────────────────────────────────────────────────
 
-def coste_transp_peso(peso_kg: float, zona: str = "peninsula") -> float | None:
+def coste_transp_peso(peso_kg: float, zona: str = "peninsula",
+                       es_adr: bool = False) -> float | None:
     """
     Devuelve el coste de transporte por peso.
+    Si es_adr=True y existen tarifas ADR cargadas, las usa en lugar de las normales.
     Devuelve None si la zona es 'baleares' y el peso supera el límite de su tabla.
     """
-    tabla = DATOS.get("transporte_peso", [])
+    tabla_key = (
+        "transporte_peso_adr"
+        if es_adr and "transporte_peso_adr" in DATOS
+        else "transporte_peso"
+    )
+    tabla = DATOS.get(tabla_key, [])
     if not tabla:
         raise RuntimeError("Datos de tarifas no cargados. Llama a set_datos() primero.")
 
-    # Baleares solo llega hasta baleares_kg_max (normalmente 200 kg)
-    baleares_max = DATOS.get("baleares_kg_max", 200.0)
+    baleares_key = "baleares_kg_max_adr" if es_adr and "baleares_kg_max_adr" in DATOS else "baleares_kg_max"
+    baleares_max = DATOS.get(baleares_key, 200.0)
     if zona != "peninsula" and peso_kg > baleares_max:
         return None  # forzar palé — no hay tarifa por peso
 
@@ -75,9 +82,17 @@ def coste_transp_peso(peso_kg: float, zona: str = "peninsula") -> float | None:
     return precio if precio is not None else None
 
 
-def coste_pale_unitario(provincia: str) -> float:
-    """Devuelve el precio por palé individual para la provincia dada."""
-    tarifas = DATOS.get("tarifa_pale_provincia", {})
+def coste_pale_unitario(provincia: str, es_adr: bool = False) -> float:
+    """
+    Devuelve el precio por palé individual para la provincia dada.
+    Si es_adr=True y existen tarifas de palé ADR, las usa.
+    """
+    tarifa_key = (
+        "tarifa_pale_provincia_adr"
+        if es_adr and "tarifa_pale_provincia_adr" in DATOS
+        else "tarifa_pale_provincia"
+    )
+    tarifas = DATOS.get(tarifa_key) or DATOS.get("tarifa_pale_provincia", {})
     if not tarifas:
         raise RuntimeError("Datos de tarifas no cargados. Llama a set_datos() primero.")
 
@@ -89,15 +104,22 @@ def coste_pale_unitario(provincia: str) -> float:
     return precio
 
 
-def coste_multipale(num_pales: int, peso_kg: float, provincia: str = "") -> float | None:
+def coste_multipale(num_pales: int, peso_kg: float, provincia: str = "",
+                    es_adr: bool = False) -> float | None:
     """
     Tarifa de carga completa (a partir de 5 palés) por provincia.
+    Si es_adr=True y existen tarifas de carga completa ADR, las usa.
     Devuelve None si no hay tarifa aplicable o el volumen supera el máximo.
     """
     if num_pales < 5:
         return None
 
-    cargas = DATOS.get("cargas_completas", {})
+    cargas_key = (
+        "cargas_completas_adr"
+        if es_adr and "cargas_completas_adr" in DATOS
+        else "cargas_completas"
+    )
+    cargas = DATOS.get(cargas_key) or DATOS.get("cargas_completas", {})
     if not cargas:
         return None
 
@@ -122,27 +144,30 @@ def coste_multipale(num_pales: int, peso_kg: float, provincia: str = "") -> floa
 def calcular_transporte(num_cajas: int, producto: dict,
                          provincia: str = "PENINSULA_MEDIA",
                          zona: str = "peninsula") -> dict:
+    es_adr = producto.get("adr", False)
     peso   = num_cajas * producto["peso_kg"]
     cpale  = cajas_por_pale(producto)
     npales = max(1, math.ceil(num_cajas / cpale))
     opciones = {}
 
-    # Opción 1: por peso (solo si el peso está dentro de la tabla)
-    tabla = DATOS.get("transporte_peso", [])
+    # Opción 1: por peso — usa tabla ADR si el producto es ADR
+    tabla_key        = "transporte_peso_adr" if es_adr and "transporte_peso_adr" in DATOS else "transporte_peso"
+    tabla            = DATOS.get(tabla_key, DATOS.get("transporte_peso", []))
+    baleares_key     = "baleares_kg_max_adr" if es_adr and "baleares_kg_max_adr" in DATOS else "baleares_kg_max"
     peninsula_kg_max = tabla[-1][0] if tabla else 1000.0
-    baleares_kg_max  = DATOS.get("baleares_kg_max", 200.0)
+    baleares_kg_max  = DATOS.get(baleares_key, 200.0)
     peso_max_zona    = baleares_kg_max if zona != "peninsula" else peninsula_kg_max
 
     if peso <= peso_max_zona:
-        coste_peso = coste_transp_peso(peso, zona)
+        coste_peso = coste_transp_peso(peso, zona, es_adr=es_adr)
         if coste_peso is not None:
             opciones["Por peso"] = coste_peso
 
     # Opción 2: palés individuales
-    opciones["Palés individuales"] = npales * coste_pale_unitario(provincia)
+    opciones["Palés individuales"] = npales * coste_pale_unitario(provincia, es_adr=es_adr)
 
     # Opción 3: carga completa (multi-palé), solo si aplica
-    mp = coste_multipale(npales, peso, provincia)
+    mp = coste_multipale(npales, peso, provincia, es_adr=es_adr)
     if mp is not None:
         opciones["Multi-palé"] = mp
 
@@ -154,6 +179,7 @@ def calcular_transporte(num_cajas: int, producto: dict,
         "num_pales": npales,
         "peso_kg": peso,
         "cajas_por_pale": cpale,
+        "es_adr": es_adr,
     }
 
 
@@ -229,6 +255,7 @@ def coste_envio_completo(num_cajas: int, producto: dict,
         "transporte": tr,
         "almacen": alm,
         "valor_por_caja": valor_por_caja,
+        "es_adr": tr.get("es_adr", False),
     }
 
 
@@ -488,6 +515,7 @@ def analizar_hoja_envios(df_envios: pd.DataFrame,
                 "Producto":          res["producto"],
                 "Cajas":             res["cajas"],
                 "Provincia":         res["provincia"],
+                "ADR":               act.get("es_adr", False),
                 "Modalidad":         act["transporte"]["modalidad"],
                 "Coste_transporte":  round(act["transporte"]["coste"], 2),
                 "Coste_almacen":     round(act["almacen"]["total"], 2),
@@ -513,6 +541,7 @@ def analizar_hoja_envios(df_envios: pd.DataFrame,
                 "Producto": row.get("Producto", "?"),
                 "Cajas": row.get("Cajas", 0),
                 "Provincia": row.get("Provincia", "?"),
+                "ADR": False,
                 "Modalidad": "ERROR",
                 "Coste_transporte": 0, "Coste_almacen": 0, "Coste_total": 0,
                 "Coste_por_caja": 0, "Optimo_cajas": 0, "Optimo_coste_caja": 0,

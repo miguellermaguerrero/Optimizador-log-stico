@@ -689,8 +689,28 @@ with st.expander("⚙️ Parámetros de análisis", expanded=False):
         )
     with p2:
         if _productos_disponibles:
-            st.markdown("**Productos en catálogo** (el valor de cada uno viene de tu Excel de catálogo):")
-            st.caption(" · ".join(_productos_disponibles))
+            _prods_dict   = _datos.get("productos", {})
+            _prods_adr    = [p for p in _productos_disponibles if _prods_dict.get(p, {}).get("adr", False)]
+            _prods_std    = [p for p in _productos_disponibles if not _prods_dict.get(p, {}).get("adr", False)]
+            _tiene_adr    = bool(_prods_adr)
+            _tiene_adr_tarifa = "transporte_peso_adr" in _datos
+
+            if _tiene_adr:
+                _adr_status = (
+                    "✅ Tarifas ADR cargadas" if _tiene_adr_tarifa
+                    else "⚠️ Sin tarifas ADR en el Excel — se usarán tarifas estándar"
+                )
+                st.markdown(
+                    f"<span style='background:#C0392B;color:#fff;border-radius:6px;"
+                    f"padding:2px 9px;font-size:0.8rem;font-weight:700;'>⚠️ ADR</span>"
+                    f"&nbsp; {' · '.join(_prods_adr)}"
+                    f"<br><span style='color:#888;font-size:0.78rem;'>{_adr_status}</span>",
+                    unsafe_allow_html=True,
+                )
+                st.markdown("")
+            if _prods_std:
+                st.markdown("**Productos estándar:**")
+                st.caption(" · ".join(_prods_std))
 
 valor_caja = None   # se usa el valor_caja del catálogo por producto
 logistics.DATOS["umbral_cercano_pct"] = umbral_sug / 100
@@ -1100,24 +1120,33 @@ with tabs[2]:
                 delta="si ajustas los envíos" if ahorro_max > 0 else "ya optimizados")
 
     st.markdown("### Detalle por envío")
-    cols_show = ["Fecha", "Producto", "Cajas", "Provincia", "Modalidad",
-                 "Coste_transporte", "Coste_almacen", "Coste_total",
-                 "Coste_por_caja", "Cerca_de_optimo", "Sugerencia_cajas", "Sugerencia_ahorro"]
-    df_display = df_result[cols_show].copy()
+    _hay_adr_envios = df_result["ADR"].any() if "ADR" in df_result.columns else False
+    cols_show = (
+        ["Fecha", "Producto", "ADR", "Cajas", "Provincia", "Modalidad",
+         "Coste_transporte", "Coste_almacen", "Coste_total",
+         "Coste_por_caja", "Cerca_de_optimo", "Sugerencia_cajas", "Sugerencia_ahorro"]
+        if _hay_adr_envios
+        else
+        ["Fecha", "Producto", "Cajas", "Provincia", "Modalidad",
+         "Coste_transporte", "Coste_almacen", "Coste_total",
+         "Coste_por_caja", "Cerca_de_optimo", "Sugerencia_cajas", "Sugerencia_ahorro"]
+    )
+    df_display = df_result[[c for c in cols_show if c in df_result.columns]].copy()
+    if "ADR" in df_display.columns:
+        df_display["ADR"] = df_display["ADR"].map({True: "⚠️ ADR", False: ""})
 
     def color_cerca(val):
         return "background-color: #FFF8E7; color: #7A5200" if val is True else ""
 
-    styled = df_display.style\
-        .format({
-            "Coste_transporte":  "{:.2f} €",
-            "Coste_almacen":     "{:.2f} €",
-            "Coste_total":       "{:.2f} €",
-            "Coste_por_caja":    "{:.3f} €",
-            "Sugerencia_ahorro": lambda v: f"{v:.2f} €" if pd.notna(v) else "—",
-            "Sugerencia_cajas":  lambda v: f"{int(v)}"  if pd.notna(v) else "—",
-        })\
-        .applymap(color_cerca, subset=["Cerca_de_optimo"])
+    _fmt = {
+        "Coste_transporte":  "{:.2f} €",
+        "Coste_almacen":     "{:.2f} €",
+        "Coste_total":       "{:.2f} €",
+        "Coste_por_caja":    "{:.3f} €",
+        "Sugerencia_ahorro": lambda v: f"{v:.2f} €" if pd.notna(v) else "—",
+        "Sugerencia_cajas":  lambda v: f"{int(v)}"  if pd.notna(v) else "—",
+    }
+    styled = df_display.style.format(_fmt).applymap(color_cerca, subset=["Cerca_de_optimo"])
     st.dataframe(styled, use_container_width=True)
 
     # ── Sugerencias ───────────────────────────────────────────────────────────

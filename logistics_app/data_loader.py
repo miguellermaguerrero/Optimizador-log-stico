@@ -263,6 +263,29 @@ def cargar_tarifas(path=None) -> dict:
         otras_rows[2][2] if len(otras_rows) > 2 else None, default=0.0008
     )
 
+    # ── ADR (hoja "ADR", misma estructura que Transporte_Kg) ─────────────────
+    if "ADR" in wb.sheetnames:
+        _ws_adr  = wb["ADR"]
+        _adr_pen: dict = {}
+        _adr_bal: dict = {}
+        for _adr_row in _ws_adr.iter_rows(min_row=4, values_only=True):
+            _kg_p = _safe_float(_adr_row[0] if len(_adr_row) > 0 else None)
+            _pr_p = _safe_float(_adr_row[1] if len(_adr_row) > 1 else None)
+            if _kg_p is not None and _pr_p is not None:
+                _adr_pen[_kg_p] = _pr_p
+            _kg_b = _safe_float(_adr_row[3] if len(_adr_row) > 3 else None)
+            _pr_b = _safe_float(_adr_row[4] if len(_adr_row) > 4 else None)
+            if _kg_b is not None and _pr_b is not None:
+                _adr_bal[_kg_b] = _pr_b
+        if _adr_pen:
+            datos["transporte_peso_adr"] = [
+                (_kg, _adr_pen[_kg], _adr_bal.get(_kg))
+                for _kg in sorted(_adr_pen)
+            ]
+            datos["baleares_kg_max_adr"] = (
+                max(_adr_bal.keys()) if _adr_bal else datos.get("baleares_kg_max", 200.0)
+            )
+
     wb.close()
     return datos
 
@@ -319,6 +342,11 @@ def cargar_productos(path=None) -> dict:
                     continue  # producto dado de baja
 
         try:
+            # Columna K (índice 10): ADR — Sí / No
+            _adr_raw = row[10] if len(row) > 10 else None
+            _adr_str = str(_adr_raw).strip().lower() if _adr_raw is not None else ""
+            _es_adr  = _adr_str in ("sí", "si", "s", "yes", "y", "x", "1", "true", "adr", "✓")
+
             productos[nombre] = {
                 "uds_por_caja": _safe_int(row[4],  default=1),    # E
                 "largo_cm":     _safe_float(row[5], default=40.0), # F
@@ -326,6 +354,7 @@ def cargar_productos(path=None) -> dict:
                 "alto_cm":      _safe_float(row[7], default=25.0), # H
                 "peso_kg":      _safe_float(row[8], default=5.0),  # I
                 "valor_caja":   _safe_float(row[9], default=50.0), # J
+                "adr":          _es_adr,                           # K
             }
         except Exception:
             pass  # fila malformada, ignorar
