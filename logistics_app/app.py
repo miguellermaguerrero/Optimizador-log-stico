@@ -1030,12 +1030,48 @@ with tabs[0]:
         pd.to_numeric, errors="coerce"
     ).fillna(0)
 
-    # Métricas: total por almacén (suma de todos sus productos)
+    # Resumen por almacén: cada tarjeta muestra cajas + unidades por producto
     st.markdown("### Resumen por almacén")
-    _totales_alm = _df_num.sum(axis=1)
-    _cols_alm_ui = st.columns(min(len(_totales_alm), 5))
-    for _i, (_alm_name, _tot) in enumerate(_totales_alm.items()):
-        _cols_alm_ui[_i % len(_cols_alm_ui)].metric(_alm_name, f"{int(_tot):,} cajas")
+    _prods_cat   = _datos.get("productos", {})
+    _alm_nombres = list(_df_num.index)
+    _N_COLS      = 3
+    for _fila_start in range(0, len(_alm_nombres), _N_COLS):
+        _fila_alms = _alm_nombres[_fila_start : _fila_start + _N_COLS]
+        _grid_cols = st.columns(_N_COLS)
+        for _ci, _alm_name in enumerate(_fila_alms):
+            with _grid_cols[_ci]:
+                _fila_stock = _df_num.loc[_alm_name]
+                _total_cajas = int(_fila_stock.sum())
+                # Cabecera de la tarjeta
+                st.markdown(
+                    f"<div style='background:{WHITE};border-radius:12px;"
+                    f"padding:14px 18px;border:1px solid #D0E4F5;"
+                    f"box-shadow:0 2px 8px rgba(26,46,74,0.07);margin-bottom:8px;'>"
+                    f"<div style='color:{NAVY};font-weight:700;font-size:0.95rem;"
+                    f"margin-bottom:8px;border-bottom:1px solid #EBF2FA;padding-bottom:6px;'>"
+                    f"{_alm_name}"
+                    f"<span style='float:right;color:{LBLUE};font-size:0.82rem;font-weight:600;'>"
+                    f"{_total_cajas:,} cajas total</span></div>",
+                    unsafe_allow_html=True,
+                )
+                # Filas por producto (solo los que tienen stock > 0)
+                _filas_html = ""
+                for _prod in _prod_cols:
+                    _cajas = int(_fila_stock.get(_prod, 0))
+                    if _cajas == 0:
+                        continue
+                    _uds_x_caja = _prods_cat.get(_prod, {}).get("uds_por_caja", 1)
+                    _unidades   = _cajas * _uds_x_caja
+                    _filas_html += (
+                        f"<div style='display:flex;justify-content:space-between;"
+                        f"font-size:0.82rem;padding:3px 0;border-bottom:1px solid #F4F8FD;'>"
+                        f"<span style='color:#5a7490;'>{_prod}</span>"
+                        f"<span><b>{_cajas:,}</b> cajas &nbsp;·&nbsp; "
+                        f"<b>{_unidades:,}</b> uds</span></div>"
+                    )
+                if not _filas_html:
+                    _filas_html = "<span style='color:#aaa;font-size:0.8rem;'>Sin stock</span>"
+                st.markdown(_filas_html + "</div>", unsafe_allow_html=True)
 
     # Gráfico: eje X = productos, barras apiladas por almacén
     st.markdown("### Distribución de stock")
