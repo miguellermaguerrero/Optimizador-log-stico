@@ -791,6 +791,32 @@ n_prov = len([k for k in _datos.get("tarifa_pale_provincia", {}) if k != "PENINS
 n_prod = len(_productos_disponibles)
 
 # ─── CABECERA ─────────────────────────────────────────────────────────────────
+# Logos y nombre del apartado activo
+_sec_cfg       = next((s for s in APP_SECTIONS if s["id"] == _seccion_activa), {})
+_sec_nombre    = _sec_cfg.get("nombre", "")
+_sec_logos     = _sec_cfg.get("logos", [])
+_sec_logos_html = ""
+for _lf in _sec_logos:
+    _lb = _logo_file_b64(_lf)
+    if _lb:
+        _sec_logos_html += (
+            f'<img src="data:image/png;base64,{_lb}" '
+            f'style="max-height:48px;max-width:110px;object-fit:contain;'
+            f'filter:brightness(0) invert(1);opacity:0.92;">'
+        )
+
+_sec_block = ""
+if _sec_nombre:
+    _sec_block = f"""
+<div style="margin-left:auto;text-align:right;">
+  <div style="display:flex;align-items:center;gap:14px;justify-content:flex-end;margin-bottom:6px;">
+    {_sec_logos_html}
+  </div>
+  <span style="color:rgba(255,255,255,0.5);font-size:0.72rem;letter-spacing:1.5px;
+    text-transform:uppercase;font-weight:600;">{_sec_nombre}</span>
+</div>
+"""
+
 st.markdown(f"""
 <div class="app-header">
   {_logo_html}
@@ -799,6 +825,7 @@ st.markdown(f"""
     <p>Análisis y optimización de costes de distribución</p>
     <span class="badge">✅ {n_prov} provincias · {n_prod} productos cargados</span>
   </div>
+  {_sec_block}
 </div>
 """, unsafe_allow_html=True)
 
