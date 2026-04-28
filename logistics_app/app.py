@@ -1025,12 +1025,12 @@ if _historial:
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# ─── PANTALLA SIN DATOS ───────────────────────────────────────────────────────
+# ─── AVISO SIN DATOS (no para la ejecución, el calendario siempre se muestra) ─
 if not f_stock and not f_llegadas and not f_envios:
     st.markdown(f"""
 <div style="background:{WHITE};border-radius:14px;padding:36px 40px;
             text-align:center;border:1px solid #D0E4F5;
-            box-shadow:0 2px 12px rgba(26,46,74,0.07);">
+            box-shadow:0 2px 12px rgba(26,46,74,0.07);margin-bottom:16px;">
   <p style="font-size:2.5rem;margin:0">📋</p>
   <h3 style="color:{NAVY};margin:8px 0 6px 0;">Descarga las plantillas, rellénalas y súbelas</h3>
   <p style="color:#5a7490;margin:0;font-size:0.95rem;">
@@ -1039,7 +1039,6 @@ if not f_stock and not f_llegadas and not f_envios:
   </p>
 </div>
 """, unsafe_allow_html=True)
-    st.stop()
 
 
 # ─── Funciones auxiliares de lectura ─────────────────────────────────────────
