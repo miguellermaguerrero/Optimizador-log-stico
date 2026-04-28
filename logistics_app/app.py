@@ -3,8 +3,9 @@ app.py — Aplicación Streamlit de Optimización Logística
 Ejecutar: streamlit run app.py
 """
 from __future__ import annotations
-import sys, os, base64
+import sys, os, base64, calendar
 from pathlib import Path
+from datetime import date, datetime
 sys.path.insert(0, os.path.dirname(__file__))
 
 import streamlit as st
@@ -965,7 +966,8 @@ if f_stock:
             else:
                 _usuario_actual = st.session_state.get("usuario", "desconocido")
                 _entrada = uploads_manager.guardar_subida(
-                    _nombre_subida, _usuario_actual, _file_bytes
+                    _nombre_subida, _usuario_actual, _file_bytes,
+                    seccion=_seccion_activa,
                 )
                 st.success(
                     f"✅ Guardado como **{_entrada['nombre']}** "
@@ -1211,9 +1213,136 @@ if f_stock and f_envios:
 
     st.markdown("<br>", unsafe_allow_html=True)
 
+# ─── FUNCIÓN CALENDARIO ──────────────────────────────────────────────────────
+def _widget_calendario(seccion_id: str) -> None:
+    """Renderiza un calendario mensual con días de subida de stock marcados."""
+    MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
+             "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
+    DIAS  = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"]
+
+    hoy   = date.today()
+    mk    = f"cal_mes_{seccion_id}"
+    ak    = f"cal_anio_{seccion_id}"
+    mes   = st.session_state.get(mk, hoy.month)
+    anio  = st.session_state.get(ak, hoy.year)
+
+    fechas_subida = uploads_manager.get_fechas_subida_seccion(seccion_id)
+    historial_mes = [
+        e for e in uploads_manager.get_historial_seccion(seccion_id)
+        if e["fecha"].startswith(f"{anio}-{mes:02d}")
+    ]
+
+    # ── Navegación de mes ────────────────────────────────────────────────────
+    cp, ct, cn = st.columns([1, 4, 1])
+    with cp:
+        if st.button("◀", key=f"cp_{seccion_id}"):
+            st.session_state[mk] = 12 if mes == 1 else mes - 1
+            st.session_state[ak] = anio - 1 if mes == 1 else anio
+            st.rerun()
+    with ct:
+        st.markdown(
+            f"<h3 style='text-align:center;color:#1A2E4A;margin:0;'>"
+            f"{MESES[mes-1]} {anio}</h3>",
+            unsafe_allow_html=True,
+        )
+    with cn:
+        if st.button("▶", key=f"cn_{seccion_id}"):
+            st.session_state[mk] = 1 if mes == 12 else mes + 1
+            st.session_state[ak] = anio + 1 if mes == 12 else anio
+            st.rerun()
+
+    # ── Construir HTML del calendario ────────────────────────────────────────
+    semanas = calendar.monthcalendar(anio, mes)
+
+    celdas_dias = "".join(
+        f"<th style='padding:6px 10px;color:#5a7490;font-size:0.78rem;"
+        f"font-weight:600;text-align:center;'>{d}</th>"
+        for d in DIAS
+    )
+
+    filas_html = ""
+    for semana in semanas:
+        filas_html += "<tr>"
+        for dia in semana:
+            if dia == 0:
+                filas_html += "<td></td>"
+            else:
+                fecha_str = f"{anio}-{mes:02d}-{dia:02d}"
+                es_hoy     = (dia == hoy.day and mes == hoy.month and anio == hoy.year)
+                tiene_subida = fecha_str in fechas_subida
+
+                if tiene_subida:
+                    bg     = "#1A2E4A"
+                    color  = "#ffffff"
+                    border = "2px solid #1A2E4A"
+                    title  = "📦 Subida registrada"
+                elif es_hoy:
+                    bg     = "#EBF2FA"
+                    color  = "#1A2E4A"
+                    border = "2px solid #4A7AB5"
+                    title  = "Hoy"
+                else:
+                    bg     = "transparent"
+                    color  = "#374151"
+                    border = "1px solid transparent"
+                    title  = ""
+
+                filas_html += (
+                    f"<td title='{title}' style='text-align:center;padding:4px;'>"
+                    f"<div style='width:34px;height:34px;border-radius:50%;"
+                    f"background:{bg};color:{color};border:{border};"
+                    f"display:flex;align-items:center;justify-content:center;"
+                    f"font-size:0.9rem;font-weight:{'700' if tiene_subida or es_hoy else '400'};"
+                    f"margin:auto;cursor:{'pointer' if tiene_subida else 'default'};'>"
+                    f"{dia}</div></td>"
+                )
+        filas_html += "</tr>"
+
+    html_cal = f"""
+<div style='background:#fff;border-radius:14px;padding:20px 24px;
+    border:1px solid #D0E4F5;box-shadow:0 2px 8px rgba(26,46,74,0.07);
+    max-width:400px;margin:0 auto;'>
+  <table style='border-collapse:separate;border-spacing:4px;width:100%;'>
+    <thead><tr>{celdas_dias}</tr></thead>
+    <tbody>{filas_html}</tbody>
+  </table>
+  <div style='margin-top:14px;display:flex;gap:16px;font-size:0.8rem;color:#5a7490;'>
+    <span><span style='display:inline-block;width:12px;height:12px;border-radius:50%;
+      background:#1A2E4A;margin-right:4px;vertical-align:middle;'></span>Subida de stock</span>
+    <span><span style='display:inline-block;width:12px;height:12px;border-radius:50%;
+      border:2px solid #4A7AB5;margin-right:4px;vertical-align:middle;'></span>Hoy</span>
+  </div>
+</div>
+"""
+    st.markdown(html_cal, unsafe_allow_html=True)
+
+    # ── Detalle de subidas del mes ───────────────────────────────────────────
+    if historial_mes:
+        st.markdown(
+            f"<p style='text-align:center;color:#5a7490;font-size:0.85rem;"
+            f"margin-top:16px;'>{len(historial_mes)} subida(s) en {MESES[mes-1]}</p>",
+            unsafe_allow_html=True,
+        )
+        for _e in historial_mes:
+            st.markdown(
+                f"<div style='background:#F4F8FD;border-radius:8px;padding:8px 14px;"
+                f"margin:4px 0;font-size:0.85rem;border-left:3px solid #1A2E4A;'>"
+                f"<b>{_e['fecha']}</b> · {_e['nombre']} "
+                f"<span style='color:#5a7490;'>({_e.get('usuario','?')})</span>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+    else:
+        st.markdown(
+            f"<p style='text-align:center;color:#5a7490;font-size:0.85rem;"
+            f"margin-top:16px;'>Sin subidas en {MESES[mes-1]} {anio}</p>",
+            unsafe_allow_html=True,
+        )
+
+
 # ─── ANÁLISIS ─────────────────────────────────────────────────────────────────
 st.markdown('<p class="section-title">📊 Análisis</p>', unsafe_allow_html=True)
-tabs = st.tabs(["📦 Stock", "📥 Llegadas", "📤 Envíos & Optimización", "💰 Comparador de precios"])
+tabs = st.tabs(["📦 Stock", "📥 Llegadas", "📤 Envíos & Optimización", "💰 Comparador de precios", "📅 Calendario de stock"])
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 1 — STOCK
@@ -1794,3 +1923,14 @@ with tabs[3]:
             mime=XLSX_MIME,
             use_container_width=True,
         )
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 5 — CALENDARIO DE STOCK
+# ══════════════════════════════════════════════════════════════════════════════
+with tabs[4]:
+    st.markdown(
+        "<p style='color:#5a7490;font-size:0.9rem;margin-bottom:16px;'>"
+        "Días en que se ha subido un archivo de <b>stock actual</b> en este apartado.</p>",
+        unsafe_allow_html=True,
+    )
+    _widget_calendario(_seccion_activa)

@@ -50,7 +50,8 @@ def _save_log(entries: list[dict]) -> None:
 
 # ─── API pública ─────────────────────────────────────────────────────────────
 
-def guardar_subida(nombre: str, usuario: str, file_bytes: bytes) -> dict:
+def guardar_subida(nombre: str, usuario: str, file_bytes: bytes,
+                   seccion: str = "") -> dict:
     """
     Guarda el archivo xlsx y registra la subida en el log.
     Devuelve el diccionario de la entrada creada.
@@ -69,6 +70,7 @@ def guardar_subida(nombre: str, usuario: str, file_bytes: bytes) -> dict:
         "usuario":  usuario,
         "fecha":    datetime.now().strftime("%Y-%m-%d %H:%M"),
         "filename": filename,
+        "seccion":  seccion,
     }
     entries = _load_log()
     entries.insert(0, entrada)   # más reciente primero
@@ -79,6 +81,22 @@ def guardar_subida(nombre: str, usuario: str, file_bytes: bytes) -> dict:
 def get_historial() -> list[dict]:
     """Devuelve todas las subidas registradas, de más reciente a más antigua."""
     return _load_log()
+
+
+def get_historial_seccion(seccion: str) -> list[dict]:
+    """Devuelve las subidas de una sección concreta, de más reciente a más antigua."""
+    return [e for e in _load_log() if e.get("seccion", "") == seccion]
+
+
+def get_fechas_subida_seccion(seccion: str) -> set[str]:
+    """Devuelve el conjunto de fechas (YYYY-MM-DD) con subidas para una sección."""
+    fechas = set()
+    for e in get_historial_seccion(seccion):
+        try:
+            fechas.add(e["fecha"][:10])
+        except Exception:
+            pass
+    return fechas
 
 
 def get_bytes(filename: str) -> bytes | None:
