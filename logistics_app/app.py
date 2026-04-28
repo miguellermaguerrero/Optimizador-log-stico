@@ -1501,7 +1501,7 @@ with tabs[1]:
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 2 — LLEGADAS
 # ══════════════════════════════════════════════════════════════════════════════
-with tabs[1]:
+with tabs[2]:
     if not f_llegadas:
         st.info("Sube el archivo de **llegadas** para ver esta sección.")
         st.stop()
@@ -1541,7 +1541,7 @@ with tabs[1]:
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 3 — ENVÍOS & OPTIMIZACIÓN
 # ══════════════════════════════════════════════════════════════════════════════
-with tabs[2]:
+with tabs[3]:
     if not f_envios:
         st.info("Sube el archivo de **envíos planificados** para ver esta sección.")
         st.stop()
@@ -1770,7 +1770,7 @@ Coste total: <b>{row['Coste_total']:.2f} €</b>
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 4 — COMPARADOR DE PRECIOS
 # ══════════════════════════════════════════════════════════════════════════════
-with tabs[3]:
+with tabs[4]:
     if not f_envios:
         st.info("Sube el archivo de **envíos planificados** para usar el comparador.")
         st.stop()
