@@ -28,13 +28,35 @@ TOKEN_TTL    = 3600  # segundos (1 hora)
 
 # ─── Almacenamiento ──────────────────────────────────────────────────────────
 
+def _seed_admin_from_secrets(users: dict) -> dict:
+    """
+    Si el admin no está en users.json (p.ej. tras un redeploy en Streamlit Cloud),
+    lo reconstruye a partir de st.secrets["ADMIN_PASSWORD"].
+    """
+    if ADMIN_EMAIL in users:
+        return users
+    try:
+        import streamlit as st
+        pwd = st.secrets.get("ADMIN_PASSWORD", "")
+        if pwd:
+            users[ADMIN_EMAIL] = {
+                "password": _hash(pwd),
+                "nombre":   "Admin",
+                "status":   "approved",
+            }
+    except Exception:
+        pass
+    return users
+
+
 def _load_users() -> dict:
     if USERS_FILE.exists():
         try:
-            return json.loads(USERS_FILE.read_text(encoding="utf-8"))
+            data = json.loads(USERS_FILE.read_text(encoding="utf-8"))
+            return _seed_admin_from_secrets(data)
         except Exception:
-            return {}
-    return {}
+            return _seed_admin_from_secrets({})
+    return _seed_admin_from_secrets({})
 
 
 def _save_users(users: dict) -> None:
