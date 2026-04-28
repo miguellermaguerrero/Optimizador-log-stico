@@ -23,7 +23,7 @@ import uploads_manager
 
 # ─── Configuración de página ─────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Bajo el hórreo",
+    page_title="Optimizaciones Logísticas Lerma Guerrero",
     page_icon="🏪",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -79,7 +79,7 @@ div[data-testid="stRadio"] label p {{
 </style>
 <div class="auth-box">
   {logo_tag}
-  <h2>Bajo el hórreo</h2>
+  <h2>Optimizaciones Logísticas Lerma Guerrero</h2>
   <p>Gestión logística · Acceso privado</p>
 </div>
 """, unsafe_allow_html=True)
@@ -620,7 +620,7 @@ st.markdown(f"""
 <div class="app-header">
   {_logo_html}
   <div>
-    <h1>Debajo del hórreo</h1>
+    <h1>Optimizaciones Logísticas Lerma Guerrero</h1>
     <p>Análisis y optimización de costes de distribución</p>
     <span class="badge">✅ {n_prov} provincias · {n_prod} productos cargados</span>
   </div>
