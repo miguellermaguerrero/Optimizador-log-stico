@@ -15,7 +15,7 @@ SECTIONS: list[dict] = [
         "id":          "prosales_altadis",
         "nombre":      "PROSALES-ALTADIS TR",
         "descripcion": "Tarifas de transporte Prosales · Altadis",
-        "logos":       ["logo_prosales.png", "logo_imperial.png", "logo.png"],
+        "logos":       ["logo_prosales.png", "logo_imperial.png", "logo_maydis.png"],
         "color":       "#1A2E4A",
     },
     # Añade aquí futuros apartados:

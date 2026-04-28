@@ -599,7 +599,7 @@ def _logo_b64() -> str:
 
 _logo = _logo_b64()
 _logo_html = (
-    f'<img src="data:image/png;base64,{_logo}" style="height:72px;margin-right:18px;vertical-align:middle;">'
+    f'<img src="data:image/png;base64,{_logo}" style="height:100px;margin-right:22px;vertical-align:middle;">'
     if _logo else ""
 )
 
@@ -1342,12 +1342,23 @@ def _widget_calendario(seccion_id: str) -> None:
 
 # ─── ANÁLISIS ─────────────────────────────────────────────────────────────────
 st.markdown('<p class="section-title">📊 Análisis</p>', unsafe_allow_html=True)
-tabs = st.tabs(["📦 Stock", "📥 Llegadas", "📤 Envíos & Optimización", "💰 Comparador de precios", "📅 Calendario de stock"])
+tabs = st.tabs(["📅 Calendario", "📦 Stock", "📥 Llegadas", "📤 Envíos & Optimización", "💰 Comparador de precios"])
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 0 — CALENDARIO (siempre visible, va primero para evitar st.stop())
+# ══════════════════════════════════════════════════════════════════════════════
+with tabs[0]:
+    st.markdown(
+        "<p style='color:#5a7490;font-size:0.9rem;margin-bottom:16px;'>"
+        "Días en que se ha subido un archivo de <b>stock actual</b> en este apartado.</p>",
+        unsafe_allow_html=True,
+    )
+    _widget_calendario(_seccion_activa)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 1 — STOCK
 # ══════════════════════════════════════════════════════════════════════════════
-with tabs[0]:
+with tabs[1]:
     if not f_stock:
         st.info("Sube el archivo de **stock actual** para ver esta sección.")
         st.stop()
@@ -1924,13 +1935,3 @@ with tabs[3]:
             use_container_width=True,
         )
 
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB 5 — CALENDARIO DE STOCK
-# ══════════════════════════════════════════════════════════════════════════════
-with tabs[4]:
-    st.markdown(
-        "<p style='color:#5a7490;font-size:0.9rem;margin-bottom:16px;'>"
-        "Días en que se ha subido un archivo de <b>stock actual</b> en este apartado.</p>",
-        unsafe_allow_html=True,
-    )
-    _widget_calendario(_seccion_activa)
