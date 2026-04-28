@@ -23,7 +23,7 @@ SECTIONS: list[dict] = [
     #     "id":          "otro_cliente",
     #     "nombre":      "OTRO CLIENTE",
     #     "descripcion": "Descripción del apartado",
-    #     "logos":       ["logo_otro.png", "logo.png"],
+    #     "logos":       ["logo_otro.png", "logo_nuevo.png"],
     #     "color":       "#2E5F8A",
     # },
 ]

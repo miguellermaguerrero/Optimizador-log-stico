@@ -46,7 +46,7 @@ def _pantalla_inicio() -> None:
     _nombre  = st.session_state.get("usuario", _email)
     _es_admin = auth.is_admin(_email)
 
-    _logo_b64_main = _logo_file_b64("logo.png")
+    _logo_b64_main = _logo_file_b64("logo_nuevo.png")
     _logo_img = (f'<img src="data:image/png;base64,{_logo_b64_main}" '
                  f'style="height:80px;margin-bottom:8px;">') if _logo_b64_main else "🏪"
 
@@ -207,7 +207,7 @@ def _pantalla_reset_token(token: str) -> None:
     """Página de cambio de contraseña cuando el usuario llega desde el enlace del email."""
     ok, result = auth.verify_reset_token(token)
 
-    _logo_path = Path(__file__).parent / "logo.png"
+    _logo_path = Path(__file__).parent / "logo_nuevo.png"
     _logo_b64  = base64.b64encode(_logo_path.read_bytes()).decode() if _logo_path.exists() else ""
     _logo_tag  = (f'<img src="data:image/png;base64,{_logo_b64}" '
                   f'style="height:180px;margin-bottom:12px;">') if _logo_b64 else "🏪"
@@ -252,7 +252,7 @@ def _pantalla_reset_token(token: str) -> None:
 
 def _pantalla_auth() -> None:
     """Muestra login / registro y detiene la ejecución hasta que el usuario acceda."""
-    _logo_path = Path(__file__).parent / "logo.png"
+    _logo_path = Path(__file__).parent / "logo_nuevo.png"
     _logo_b64  = base64.b64encode(_logo_path.read_bytes()).decode() if _logo_path.exists() else ""
     _logo_tag  = (f'<img src="data:image/png;base64,{_logo_b64}" '
                   f'style="height:200px;margin-bottom:16px;">') if _logo_b64 else "🏪"
@@ -592,7 +592,7 @@ except Exception as _e:
 
 # ─── Logo en base64 ───────────────────────────────────────────────────────────
 def _logo_b64() -> str:
-    logo_path = Path(__file__).parent / "logo.png"
+    logo_path = Path(__file__).parent / "logo_nuevo.png"
     if logo_path.exists():
         return base64.b64encode(logo_path.read_bytes()).decode()
     return ""
