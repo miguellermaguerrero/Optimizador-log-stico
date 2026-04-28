@@ -1,5 +1,5 @@
 """
-uploads_manager.py — Gestión del historial de subidas de stock.
+uploads_manager.py — Gestión del historial de subidas de archivos.
 
 Guarda cada archivo subido en:
   logistics_app/stock_uploads/<timestamp>_<slug>.xlsx
@@ -7,7 +7,8 @@ Guarda cada archivo subido en:
 Y un registro en:
   logistics_app/stock_uploads/log.json
 
-con campos: id, nombre, fecha, usuario, filename
+con campos: id, nombre, fecha, usuario, filename, seccion, tipo
+tipo puede ser: "stock", "llegadas" o "envios"
 """
 from __future__ import annotations
 import json
@@ -51,9 +52,10 @@ def _save_log(entries: list[dict]) -> None:
 # ─── API pública ─────────────────────────────────────────────────────────────
 
 def guardar_subida(nombre: str, usuario: str, file_bytes: bytes,
-                   seccion: str = "") -> dict:
+                   seccion: str = "", tipo: str = "stock") -> dict:
     """
     Guarda el archivo xlsx y registra la subida en el log.
+    tipo puede ser: "stock", "llegadas" o "envios"
     Devuelve el diccionario de la entrada creada.
     """
     _ensure_dir()
@@ -71,6 +73,7 @@ def guardar_subida(nombre: str, usuario: str, file_bytes: bytes,
         "fecha":    datetime.now().strftime("%Y-%m-%d %H:%M"),
         "filename": filename,
         "seccion":  seccion,
+        "tipo":     tipo,
     }
     entries = _load_log()
     entries.insert(0, entrada)   # más reciente primero
@@ -86,6 +89,12 @@ def get_historial() -> list[dict]:
 def get_historial_seccion(seccion: str) -> list[dict]:
     """Devuelve las subidas de una sección concreta, de más reciente a más antigua."""
     return [e for e in _load_log() if e.get("seccion", "") == seccion]
+
+
+def get_historial_seccion_tipo(seccion: str, tipo: str) -> list[dict]:
+    """Devuelve las subidas de una sección y tipo concretos."""
+    return [e for e in _load_log()
+            if e.get("seccion", "") == seccion and e.get("tipo", "stock") == tipo]
 
 
 def get_fechas_subida_seccion(seccion: str) -> set[str]:

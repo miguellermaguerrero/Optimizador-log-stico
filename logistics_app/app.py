@@ -968,7 +968,7 @@ if f_stock:
                 _usuario_actual = st.session_state.get("usuario", "desconocido")
                 _entrada = uploads_manager.guardar_subida(
                     _nombre_subida, _usuario_actual, _file_bytes,
-                    seccion=_seccion_activa,
+                    seccion=_seccion_activa, tipo="stock",
                 )
                 st.success(
                     f"✅ Guardado como **{_entrada['nombre']}** "
@@ -1022,6 +1022,66 @@ if _historial:
         _nombre_hist = st.session_state.get("stock_historial_nombre", "historial")
         st.info(f"📂 Usando subida del historial: **{_nombre_hist}**")
         f_stock = io.BytesIO(st.session_state["stock_historial_bytes"])
+
+# ─── GUARDADO DE LLEGADAS ─────────────────────────────────────────────────────
+if f_llegadas:
+    st.markdown(f"""
+<div style="background:{WHITE};border-radius:12px;padding:14px 22px;
+            border:1px solid #D0E4F5;margin-top:8px;">
+  <span style="color:{NAVY};font-weight:700;font-size:0.95rem;">
+    💾 Guardar llegadas en el historial de subidas
+  </span>
+</div>""", unsafe_allow_html=True)
+    _ll1, _ll2 = st.columns([3, 1])
+    with _ll1:
+        _nombre_subida_ll = st.text_input(
+            "Nombre llegadas",
+            placeholder='Ej: "Llegadas semana 17"',
+            key="nombre_subida_llegadas",
+            label_visibility="collapsed",
+        )
+    with _ll2:
+        if st.button("💾 Guardar", use_container_width=True, type="primary",
+                     key="btn_guardar_llegadas"):
+            if not _nombre_subida_ll.strip():
+                st.warning("Ponle un nombre antes de guardar.")
+            else:
+                _ll_bytes = f_llegadas.read(); f_llegadas.seek(0)
+                _entrada_ll = uploads_manager.guardar_subida(
+                    _nombre_subida_ll, st.session_state.get("usuario", "desconocido"),
+                    _ll_bytes, seccion=_seccion_activa, tipo="llegadas",
+                )
+                st.success(f"✅ Guardado: **{_entrada_ll['nombre']}** ({_entrada_ll['fecha']})")
+
+# ─── GUARDADO DE ENVÍOS ───────────────────────────────────────────────────────
+if f_envios:
+    st.markdown(f"""
+<div style="background:{WHITE};border-radius:12px;padding:14px 22px;
+            border:1px solid #D0E4F5;margin-top:8px;">
+  <span style="color:{NAVY};font-weight:700;font-size:0.95rem;">
+    💾 Guardar envíos en el historial de subidas
+  </span>
+</div>""", unsafe_allow_html=True)
+    _en1, _en2 = st.columns([3, 1])
+    with _en1:
+        _nombre_subida_en = st.text_input(
+            "Nombre envíos",
+            placeholder='Ej: "Envíos planificados semana 17"',
+            key="nombre_subida_envios",
+            label_visibility="collapsed",
+        )
+    with _en2:
+        if st.button("💾 Guardar", use_container_width=True, type="primary",
+                     key="btn_guardar_envios"):
+            if not _nombre_subida_en.strip():
+                st.warning("Ponle un nombre antes de guardar.")
+            else:
+                _en_bytes = f_envios.read(); f_envios.seek(0)
+                _entrada_en = uploads_manager.guardar_subida(
+                    _nombre_subida_en, st.session_state.get("usuario", "desconocido"),
+                    _en_bytes, seccion=_seccion_activa, tipo="envios",
+                )
+                st.success(f"✅ Guardado: **{_entrada_en['nombre']}** ({_entrada_en['fecha']})")
 
 st.markdown("<br>", unsafe_allow_html=True)
 
@@ -1227,20 +1287,20 @@ def _color_usuario(usuario: str, mapa: dict) -> str:
     return mapa[usuario]
 
 
-def _widget_calendario(seccion_id: str) -> None:
+def _widget_calendario(seccion_id: str, tipo: str = "stock") -> None:
     """Calendario mensual con círculos de color por usuario en días de subida."""
     MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
              "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
     DIAS  = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"]
 
     hoy  = date.today()
-    mk   = f"cal_mes_{seccion_id}"
-    ak   = f"cal_anio_{seccion_id}"
+    mk   = f"cal_mes_{seccion_id}_{tipo}"
+    ak   = f"cal_anio_{seccion_id}_{tipo}"
     mes  = st.session_state.get(mk, hoy.month)
     anio = st.session_state.get(ak, hoy.year)
 
     # ── Cargar historial completo para asignar colores consistentes ──────────
-    historial_todo = uploads_manager.get_historial_seccion(seccion_id)
+    historial_todo = uploads_manager.get_historial_seccion_tipo(seccion_id, tipo)
     historial_mes  = [e for e in historial_todo
                       if e["fecha"].startswith(f"{anio}-{mes:02d}")]
 
@@ -1261,18 +1321,18 @@ def _widget_calendario(seccion_id: str) -> None:
     # ── Navegación de mes ────────────────────────────────────────────────────
     cp, ct, cn = st.columns([1, 4, 1])
     with cp:
-        if st.button("◀", key=f"cp_{seccion_id}"):
+        if st.button("◀", key=f"cp_{seccion_id}_{tipo}"):
             st.session_state[mk] = 12 if mes == 1 else mes - 1
             st.session_state[ak] = anio - 1 if mes == 1 else anio
             st.rerun()
     with ct:
         st.markdown(
-            f"<h3 style='text-align:center;color:#1A2E4A;margin:0;'>"
+            f"<h3 style='text-align:center;color:#1A2E4A;margin:0;font-size:1rem;'>"
             f"{MESES[mes-1]} {anio}</h3>",
             unsafe_allow_html=True,
         )
     with cn:
-        if st.button("▶", key=f"cn_{seccion_id}"):
+        if st.button("▶", key=f"cn_{seccion_id}_{tipo}"):
             st.session_state[mk] = 1 if mes == 12 else mes + 1
             st.session_state[ak] = anio + 1 if mes == 12 else anio
             st.rerun()
@@ -1417,18 +1477,26 @@ def _widget_calendario(seccion_id: str) -> None:
 
 # ─── ANÁLISIS ─────────────────────────────────────────────────────────────────
 st.markdown('<p class="section-title">📊 Análisis</p>', unsafe_allow_html=True)
-tabs = st.tabs(["📅 Calendario", "📦 Stock", "📥 Llegadas", "📤 Envíos & Optimización", "💰 Comparador de precios"])
+tabs = st.tabs(["📅 Calendario de subidas de archivos", "📦 Stock", "📥 Llegadas", "📤 Envíos & Optimización", "💰 Comparador de precios"])
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 0 — CALENDARIO (siempre visible, va primero para evitar st.stop())
+# TAB 0 — CALENDARIO DE SUBIDAS (siempre visible, va primero para evitar st.stop())
 # ══════════════════════════════════════════════════════════════════════════════
 with tabs[0]:
-    st.markdown(
-        "<p style='color:#5a7490;font-size:0.9rem;margin-bottom:16px;'>"
-        "Días en que se ha subido un archivo de <b>stock actual</b> en este apartado.</p>",
-        unsafe_allow_html=True,
-    )
-    _widget_calendario(_seccion_activa)
+    _cal_tipos = [
+        ("stock",    "📦 Stock actual"),
+        ("llegadas", "📥 Llegadas al almacén"),
+        ("envios",   "📤 Envíos planificados"),
+    ]
+    _cal_cols = st.columns(3)
+    for _ci, (_ctipo, _ctitulo) in enumerate(_cal_tipos):
+        with _cal_cols[_ci]:
+            st.markdown(
+                f"<h4 style='color:#1A2E4A;text-align:center;"
+                f"font-size:1rem;margin-bottom:12px;'>{_ctitulo}</h4>",
+                unsafe_allow_html=True,
+            )
+            _widget_calendario(_seccion_activa, tipo=_ctipo)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 1 — STOCK
