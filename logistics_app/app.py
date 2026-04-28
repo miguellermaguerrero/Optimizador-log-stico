@@ -1215,23 +1215,49 @@ if f_stock and f_envios:
     st.markdown("<br>", unsafe_allow_html=True)
 
 # ─── FUNCIÓN CALENDARIO ──────────────────────────────────────────────────────
+# Paleta de colores para usuarios
+_PALETA_USUARIOS = [
+    "#2E86AB", "#E84855", "#F18F01", "#3BB273", "#7B2D8B",
+    "#D62828", "#023E8A", "#2DC653", "#FF6B35", "#9B5DE5",
+]
+
+def _color_usuario(usuario: str, mapa: dict) -> str:
+    """Devuelve (y asigna si es nuevo) un color para el usuario."""
+    if usuario not in mapa:
+        mapa[usuario] = _PALETA_USUARIOS[len(mapa) % len(_PALETA_USUARIOS)]
+    return mapa[usuario]
+
+
 def _widget_calendario(seccion_id: str) -> None:
-    """Renderiza un calendario mensual con días de subida de stock marcados."""
+    """Calendario mensual con círculos de color por usuario en días de subida."""
     MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
              "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
     DIAS  = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"]
 
-    hoy   = date.today()
-    mk    = f"cal_mes_{seccion_id}"
-    ak    = f"cal_anio_{seccion_id}"
-    mes   = st.session_state.get(mk, hoy.month)
-    anio  = st.session_state.get(ak, hoy.year)
+    hoy  = date.today()
+    mk   = f"cal_mes_{seccion_id}"
+    ak   = f"cal_anio_{seccion_id}"
+    mes  = st.session_state.get(mk, hoy.month)
+    anio = st.session_state.get(ak, hoy.year)
 
-    fechas_subida = uploads_manager.get_fechas_subida_seccion(seccion_id)
-    historial_mes = [
-        e for e in uploads_manager.get_historial_seccion(seccion_id)
-        if e["fecha"].startswith(f"{anio}-{mes:02d}")
-    ]
+    # ── Cargar historial completo para asignar colores consistentes ──────────
+    historial_todo = uploads_manager.get_historial_seccion(seccion_id)
+    historial_mes  = [e for e in historial_todo
+                      if e["fecha"].startswith(f"{anio}-{mes:02d}")]
+
+    # Mapa usuario → color (orden de aparición global para consistencia)
+    color_map: dict[str, str] = {}
+    for e in sorted(historial_todo, key=lambda x: x["fecha"]):
+        _color_usuario(e.get("usuario", "?"), color_map)
+
+    # Mapa fecha → lista de usuarios que subieron ese día
+    fecha_usuarios: dict[str, list[str]] = {}
+    for e in historial_todo:
+        fd = e["fecha"][:10]
+        fecha_usuarios.setdefault(fd, [])
+        u = e.get("usuario", "?")
+        if u not in fecha_usuarios[fd]:
+            fecha_usuarios[fd].append(u)
 
     # ── Navegación de mes ────────────────────────────────────────────────────
     cp, ct, cn = st.columns([1, 4, 1])
@@ -1252,7 +1278,7 @@ def _widget_calendario(seccion_id: str) -> None:
             st.session_state[ak] = anio + 1 if mes == 12 else anio
             st.rerun()
 
-    # ── Construir HTML del calendario ────────────────────────────────────────
+    # ── Construir celdas del calendario ──────────────────────────────────────
     semanas = calendar.monthcalendar(anio, mes)
 
     celdas_dias = "".join(
@@ -1266,53 +1292,100 @@ def _widget_calendario(seccion_id: str) -> None:
         filas_html += "<tr>"
         for dia in semana:
             if dia == 0:
-                filas_html += "<td></td>"
-            else:
-                fecha_str = f"{anio}-{mes:02d}-{dia:02d}"
-                es_hoy     = (dia == hoy.day and mes == hoy.month and anio == hoy.year)
-                tiene_subida = fecha_str in fechas_subida
+                filas_html += "<td style='padding:4px;'></td>"
+                continue
 
-                if tiene_subida:
-                    bg     = "#1A2E4A"
-                    color  = "#ffffff"
-                    border = "2px solid #1A2E4A"
-                    title  = "📦 Subida registrada"
-                elif es_hoy:
-                    bg     = "#EBF2FA"
-                    color  = "#1A2E4A"
-                    border = "2px solid #4A7AB5"
-                    title  = "Hoy"
+            fecha_str  = f"{anio}-{mes:02d}-{dia:02d}"
+            es_hoy     = (dia == hoy.day and mes == hoy.month and anio == hoy.year)
+            usuarios_dia = fecha_usuarios.get(fecha_str, [])
+
+            if usuarios_dia:
+                # Un círculo por usuario (hasta 3, luego "+N")
+                MAX_CIRCULOS = 3
+                mostrados = usuarios_dia[:MAX_CIRCULOS]
+                extra     = len(usuarios_dia) - MAX_CIRCULOS
+
+                # Círculos apilados para el número del día
+                # Usamos el color del primer usuario como borde principal
+                color_principal = color_map.get(mostrados[0], "#1A2E4A")
+
+                # Si hay varios usuarios → degradado de bordes con box-shadow
+                if len(mostrados) == 1:
+                    borde_css = f"border: 3px solid {color_principal};"
+                    sombra_css = ""
                 else:
-                    bg     = "transparent"
-                    color  = "#374151"
-                    border = "1px solid transparent"
-                    title  = ""
+                    colores = [color_map.get(u, "#1A2E4A") for u in mostrados]
+                    # Múltiples bordes simulados con box-shadow
+                    shadows = ", ".join(
+                        f"0 0 0 {3 + i*4}px {c}" for i, c in enumerate(colores)
+                    )
+                    borde_css  = f"border: 3px solid {colores[0]};"
+                    sombra_css = f"box-shadow: {shadows};"
 
+                tooltip = ", ".join(mostrados) + (f" +{extra}" if extra > 0 else "")
                 filas_html += (
-                    f"<td title='{title}' style='text-align:center;padding:4px;'>"
+                    f"<td title='📦 {tooltip}' style='text-align:center;padding:6px 4px;'>"
                     f"<div style='width:34px;height:34px;border-radius:50%;"
-                    f"background:{bg};color:{color};border:{border};"
+                    f"background:transparent;color:#1A2E4A;{borde_css}{sombra_css}"
                     f"display:flex;align-items:center;justify-content:center;"
-                    f"font-size:0.9rem;font-weight:{'700' if tiene_subida or es_hoy else '400'};"
-                    f"margin:auto;cursor:{'pointer' if tiene_subida else 'default'};'>"
+                    f"font-size:0.88rem;font-weight:700;margin:auto;cursor:pointer;'>"
+                    f"{dia}</div></td>"
+                )
+            elif es_hoy:
+                filas_html += (
+                    f"<td style='text-align:center;padding:6px 4px;'>"
+                    f"<div style='width:34px;height:34px;border-radius:50%;"
+                    f"background:#EBF2FA;color:#1A2E4A;border:2px solid #4A7AB5;"
+                    f"display:flex;align-items:center;justify-content:center;"
+                    f"font-size:0.88rem;font-weight:700;margin:auto;'>"
+                    f"{dia}</div></td>"
+                )
+            else:
+                filas_html += (
+                    f"<td style='text-align:center;padding:6px 4px;'>"
+                    f"<div style='width:34px;height:34px;border-radius:50%;"
+                    f"display:flex;align-items:center;justify-content:center;"
+                    f"font-size:0.88rem;color:#374151;margin:auto;'>"
                     f"{dia}</div></td>"
                 )
         filas_html += "</tr>"
 
+    # ── Leyenda de usuarios ───────────────────────────────────────────────────
+    if color_map:
+        leyenda_items = "".join(
+            f"<span style='display:inline-flex;align-items:center;gap:6px;"
+            f"margin-right:16px;font-size:0.82rem;color:#374151;'>"
+            f"<span style='display:inline-block;width:14px;height:14px;"
+            f"border-radius:50%;border:3px solid {col};flex-shrink:0;'></span>"
+            f"{usr}</span>"
+            for usr, col in color_map.items()
+        )
+        leyenda_html = (
+            f"<div style='margin-top:16px;padding-top:12px;"
+            f"border-top:1px solid #EBF2FA;display:flex;flex-wrap:wrap;gap:4px;'>"
+            f"{leyenda_items}"
+            f"<span style='display:inline-flex;align-items:center;gap:6px;"
+            f"font-size:0.82rem;color:#374151;'>"
+            f"<span style='display:inline-block;width:14px;height:14px;"
+            f"border-radius:50%;background:#EBF2FA;border:2px solid #4A7AB5;"
+            f"flex-shrink:0;'></span>Hoy</span>"
+            f"</div>"
+        )
+    else:
+        leyenda_html = (
+            f"<p style='margin-top:14px;font-size:0.82rem;color:#5a7490;"
+            f"text-align:center;'>Aún no hay subidas registradas.</p>"
+        )
+
     html_cal = f"""
 <div style='background:#fff;border-radius:14px;padding:20px 24px;
     border:1px solid #D0E4F5;box-shadow:0 2px 8px rgba(26,46,74,0.07);
-    max-width:400px;margin:0 auto;'>
-  <table style='border-collapse:separate;border-spacing:4px;width:100%;'>
+    max-width:440px;margin:0 auto;'>
+  <table style='border-collapse:separate;border-spacing:2px;width:100%;'>
     <thead><tr>{celdas_dias}</tr></thead>
     <tbody>{filas_html}</tbody>
   </table>
-  <div style='margin-top:14px;display:flex;gap:16px;font-size:0.8rem;color:#5a7490;'>
-    <span><span style='display:inline-block;width:12px;height:12px;border-radius:50%;
-      background:#1A2E4A;margin-right:4px;vertical-align:middle;'></span>Subida de stock</span>
-    <span><span style='display:inline-block;width:12px;height:12px;border-radius:50%;
-      border:2px solid #4A7AB5;margin-right:4px;vertical-align:middle;'></span>Hoy</span>
-  </div>
+  {leyenda_html}
 </div>
 """
     st.markdown(html_cal, unsafe_allow_html=True)
@@ -1325,11 +1398,13 @@ def _widget_calendario(seccion_id: str) -> None:
             unsafe_allow_html=True,
         )
         for _e in historial_mes:
+            _u   = _e.get("usuario", "?")
+            _col = color_map.get(_u, "#1A2E4A")
             st.markdown(
                 f"<div style='background:#F4F8FD;border-radius:8px;padding:8px 14px;"
-                f"margin:4px 0;font-size:0.85rem;border-left:3px solid #1A2E4A;'>"
+                f"margin:4px 0;font-size:0.85rem;border-left:4px solid {_col};'>"
                 f"<b>{_e['fecha']}</b> · {_e['nombre']} "
-                f"<span style='color:#5a7490;'>({_e.get('usuario','?')})</span>"
+                f"<span style='color:{_col};font-weight:600;'>({_u})</span>"
                 f"</div>",
                 unsafe_allow_html=True,
             )
