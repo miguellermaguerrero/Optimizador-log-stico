@@ -20,6 +20,7 @@ import logistics
 import auth
 import email_sender
 import uploads_manager
+from sections_config import SECTIONS as APP_SECTIONS
 
 # ─── Configuración de página ─────────────────────────────────────────────────
 st.set_page_config(
@@ -28,6 +29,122 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed",
 )
+
+# ─── PANTALLA DE INICIO ──────────────────────────────────────────────────────
+
+def _logo_file_b64(filename: str) -> str:
+    p = Path(__file__).parent / filename
+    if p.exists():
+        return base64.b64encode(p.read_bytes()).decode()
+    return ""
+
+
+def _pantalla_inicio() -> None:
+    """Muestra la pantalla de bienvenida con tarjetas de sección."""
+    _email   = st.session_state.get("usuario_email", "")
+    _nombre  = st.session_state.get("usuario", _email)
+    _es_admin = auth.is_admin(_email)
+
+    _logo_b64_main = _logo_file_b64("logo.png")
+    _logo_img = (f'<img src="data:image/png;base64,{_logo_b64_main}" '
+                 f'style="height:80px;margin-bottom:8px;">') if _logo_b64_main else "🏪"
+
+    st.markdown(f"""
+<style>
+.stApp {{ background: #EBF2FA; }}
+[data-testid="stSidebar"] {{display:none}}
+[data-testid="collapsedControl"] {{display:none}}
+.home-header {{
+    background: linear-gradient(135deg,#1A2E4A 0%,#243d5e 60%,#2E5F8A 100%);
+    border-radius:16px; padding:32px 40px; margin-bottom:32px;
+    display:flex; align-items:center; gap:24px;
+    box-shadow:0 4px 20px rgba(26,46,74,0.18);
+}}
+.home-header h1 {{ color:#fff; font-size:2rem; font-weight:700; margin:0; }}
+.home-header p  {{ color:rgba(255,255,255,0.75); margin:4px 0 0 0; font-size:1rem; }}
+.sec-card {{
+    background:#fff; border-radius:16px; padding:28px 24px 20px 24px;
+    border:1px solid #D0E4F5; box-shadow:0 2px 12px rgba(26,46,74,0.09);
+    text-align:center; height:100%;
+    transition: box-shadow 0.2s;
+}}
+.sec-card:hover {{ box-shadow:0 6px 24px rgba(26,46,74,0.16); }}
+.sec-card-logos {{ display:flex; justify-content:center; align-items:center;
+    gap:12px; margin-bottom:14px; flex-wrap:wrap; min-height:70px; }}
+.sec-card h3 {{ color:#1A2E4A; font-size:1.1rem; font-weight:700; margin:0 0 6px 0; }}
+.sec-card p  {{ color:#5a7490; font-size:0.85rem; margin:0 0 18px 0; }}
+.admin-card {{
+    background:linear-gradient(135deg,#1A2E4A,#2E5F8A);
+    border-radius:16px; padding:28px 24px 20px 24px;
+    text-align:center; height:100%;
+    box-shadow:0 2px 12px rgba(26,46,74,0.15);
+}}
+.admin-card h3 {{ color:#fff; font-size:1.1rem; font-weight:700; margin:0 0 6px 0; }}
+.admin-card p  {{ color:rgba(255,255,255,0.7); font-size:0.85rem; margin:0 0 18px 0; }}
+</style>
+<div class="home-header">
+  <div>{_logo_img}</div>
+  <div>
+    <h1>Optimizaciones Logísticas Lerma Guerrero</h1>
+    <p>Bienvenido, {_nombre} · Selecciona un apartado</p>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+    # Secciones accesibles para este usuario
+    _secciones = [
+        s for s in APP_SECTIONS
+        if _es_admin or auth.user_can_access(_email, s["id"])
+    ]
+
+    # Columnas: secciones + tarjeta admin (si admin)
+    _n_cards = len(_secciones) + (1 if _es_admin else 0)
+    _ncols   = min(_n_cards, 3) if _n_cards > 0 else 1
+    _cols    = st.columns(_ncols)
+
+    for _i, _sec in enumerate(_secciones):
+        with _cols[_i % _ncols]:
+            # Construir imágenes de logos
+            _logos_html = ""
+            for _lf in _sec.get("logos", []):
+                _lb = _logo_file_b64(_lf)
+                if _lb:
+                    _logos_html += (f'<img src="data:image/png;base64,{_lb}" '
+                                    f'style="max-height:52px;max-width:100px;'
+                                    f'object-fit:contain;">')
+            if not _logos_html:
+                _logos_html = f'<span style="font-size:2.5rem;">📦</span>'
+
+            st.markdown(f"""
+<div class="sec-card">
+  <div class="sec-card-logos">{_logos_html}</div>
+  <h3>{_sec["nombre"]}</h3>
+  <p>{_sec["descripcion"]}</p>
+</div>
+""", unsafe_allow_html=True)
+            if st.button("Entrar →", key=f"sec_{_sec['id']}", use_container_width=True):
+                st.session_state["seccion_activa"] = _sec["id"]
+                st.rerun()
+
+    # Tarjeta de administración (solo admin)
+    if _es_admin:
+        with _cols[len(_secciones) % _ncols]:
+            st.markdown("""
+<div class="admin-card">
+  <div style="font-size:2.5rem;margin-bottom:10px;">🔑</div>
+  <h3>Panel de administración</h3>
+  <p>Usuarios, permisos y solicitudes</p>
+</div>
+""", unsafe_allow_html=True)
+            if st.button("Entrar →", key="sec_admin", use_container_width=True):
+                st.session_state["seccion_activa"] = "admin"
+                st.rerun()
+
+    if _n_cards == 0:
+        st.info("Aún no tienes acceso a ningún apartado. El administrador te asignará permisos en breve.")
+
+    st.stop()
+
 
 # ─── AUTENTICACIÓN ────────────────────────────────────────────────────────────
 NAVY_AUTH  = "#1A2E4A"
@@ -251,20 +368,33 @@ if _reset_token:
 if "usuario" not in st.session_state:
     _pantalla_auth()
 
-# Botón de cerrar sesión (esquina superior derecha)
+# Botón de cerrar sesión + volver al inicio
 with st.container():
-    _, _btn_col = st.columns([8, 1])
-    with _btn_col:
-        if st.button("Salir 🔒", help="Cerrar sesión"):
-            for _k in ["usuario", "usuario_email"]:
+    _bc1, _bc2, _bc3 = st.columns([6, 1.2, 1])
+    with _bc2:
+        if st.button("🏠 Inicio", help="Volver a la pantalla de inicio", use_container_width=True):
+            st.session_state.pop("seccion_activa", None)
+            st.rerun()
+    with _bc3:
+        if st.button("Salir 🔒", help="Cerrar sesión", use_container_width=True):
+            for _k in ["usuario", "usuario_email", "seccion_activa"]:
                 st.session_state.pop(_k, None)
             st.rerun()
 
+# ── Enrutamiento de secciones ─────────────────────────────────────────────────
+_seccion_activa = st.session_state.get("seccion_activa")
+if not _seccion_activa:
+    _pantalla_inicio()   # muestra home y hace st.stop()
+
 # ─── PANEL DE ADMINISTRACIÓN (solo admin) ────────────────────────────────────
 _email_sesion = st.session_state.get("usuario_email", "")
-if auth.is_admin(_email_sesion):
-    st.markdown("---")
+if _seccion_activa == "admin" and auth.is_admin(_email_sesion):
     st.markdown(f"""
+<style>
+.stApp {{ background: #EBF2FA; }}
+[data-testid="stSidebar"] {{display:none}}
+[data-testid="collapsedControl"] {{display:none}}
+</style>
 <div style="background:#1A2E4A;border-radius:14px;padding:18px 28px;margin-bottom:18px;">
   <span style="color:#fff;font-size:1.15rem;font-weight:700;">🔑 Panel de administración</span>
   <span style="color:rgba(255,255,255,0.65);font-size:0.85rem;margin-left:12px;">
@@ -273,10 +403,11 @@ if auth.is_admin(_email_sesion):
 </div>
 """, unsafe_allow_html=True)
 
-    _tab_pend, _tab_reset, _tab_usuarios = st.tabs([
+    _tab_pend, _tab_reset, _tab_usuarios, _tab_secciones = st.tabs([
         "⏳ Solicitudes de acceso",
         "🔑 Recuperaciones de contraseña",
         "👥 Todos los usuarios",
+        "🗂️ Acceso por sección",
     ])
 
     # ── Solicitudes pendientes ────────────────────────────────────────────────
@@ -391,7 +522,51 @@ if auth.is_admin(_email_sesion):
                                 st.rerun()
                 st.divider()
 
-    st.markdown("---")
+    # ── Gestión de acceso por sección ────────────────────────────────────────
+    with _tab_secciones:
+        st.markdown("Aquí puedes controlar a qué apartados tiene acceso cada usuario.")
+        _all_u = [u for u in auth.get_all_users() if u["email"] != auth.ADMIN_EMAIL]
+        if not _all_u:
+            st.info("Aún no hay usuarios registrados.")
+        else:
+            for _u in _all_u:
+                _uemail = _u["email"]
+                _usecs  = auth.get_user_sections(_uemail)
+                st.markdown(
+                    f"**{_u['nombre'] or '(sin nombre)'}** "
+                    f"<span style='color:#5a7490;font-size:0.85rem'>— {_uemail}</span>",
+                    unsafe_allow_html=True,
+                )
+                _new_secs = []
+                _sec_cols = st.columns(max(len(APP_SECTIONS), 1))
+                for _ci, _sec in enumerate(APP_SECTIONS):
+                    with _sec_cols[_ci]:
+                        _checked = _sec["id"] in _usecs
+                        if st.checkbox(
+                            _sec["nombre"],
+                            value=_checked,
+                            key=f"sec_{_uemail}_{_sec['id']}",
+                        ):
+                            _new_secs.append(_sec["id"])
+                if st.button("💾 Guardar accesos", key=f"savesec_{_uemail}",
+                             use_container_width=False):
+                    auth.set_user_sections(_uemail, _new_secs)
+                    st.success(f"✅ Accesos actualizados para {_uemail}")
+                    st.rerun()
+                st.divider()
+
+    st.stop()   # El panel de admin termina aquí; no carga el contenido de sección
+
+# ─── Comprobar que la sección activa existe ───────────────────────────────────
+_seccion_ids = [s["id"] for s in APP_SECTIONS]
+if _seccion_activa not in _seccion_ids:
+    st.error(f"Sección desconocida: {_seccion_activa}")
+    st.stop()
+
+# ─── Comprobar acceso del usuario a la sección ───────────────────────────────
+if not auth.user_can_access(_email_sesion, _seccion_activa):
+    st.error("⛔ No tienes acceso a este apartado.")
+    st.stop()
 
 # ─── Carga de tarifas y catálogo desde Excel (cacheado) ──────────────────────
 @st.cache_resource(show_spinner="Cargando tarifas y catálogo…")

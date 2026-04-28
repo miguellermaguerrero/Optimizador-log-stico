@@ -369,3 +369,36 @@ def delete_user(email: str) -> bool:
 
 def n_usuarios() -> int:
     return len(_load_users())
+
+
+# ─── Control de acceso por sección ───────────────────────────────────────────
+
+def get_user_sections(email: str) -> list[str]:
+    """
+    Devuelve la lista de IDs de sección a los que el usuario tiene acceso.
+    El admin siempre recibe ["__all__"] (acceso total).
+    """
+    email = email.strip().lower()
+    if email == ADMIN_EMAIL:
+        return ["__all__"]
+    users = _load_users()
+    if email not in users:
+        return []
+    return users[email].get("sections", [])
+
+
+def set_user_sections(email: str, sections: list[str]) -> bool:
+    """El admin establece las secciones accesibles de un usuario."""
+    email = email.strip().lower()
+    users = _load_users()
+    if email not in users:
+        return False
+    users[email]["sections"] = sections
+    _save_users(users)
+    return True
+
+
+def user_can_access(email: str, section_id: str) -> bool:
+    """Comprueba si un usuario puede acceder a una sección concreta."""
+    secs = get_user_sections(email)
+    return "__all__" in secs or section_id in secs
