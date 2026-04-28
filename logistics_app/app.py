@@ -599,7 +599,8 @@ def _logo_b64() -> str:
 
 _logo = _logo_b64()
 _logo_html = (
-    f'<img src="data:image/png;base64,{_logo}" style="height:100px;margin-right:22px;vertical-align:middle;">'
+    f'<img src="data:image/png;base64,{_logo}" style="height:100px;margin-right:22px;'
+    f'vertical-align:middle;border-radius:18px;">'
     if _logo else ""
 )
 
@@ -801,10 +802,10 @@ for _lf in _sec_logos:
     _lb = _logo_file_b64(_lf)
     if _lb:
         _sec_logos_html += (
-            f'<div style="background:#fff;border-radius:10px;padding:6px 10px;'
+            f'<div style="background:#fff;border-radius:14px;padding:8px 14px;'
             f'display:flex;align-items:center;justify-content:center;">'
             f'<img src="data:image/png;base64,{_lb}" '
-            f'style="max-height:42px;max-width:100px;object-fit:contain;display:block;">'
+            f'style="max-height:62px;max-width:140px;object-fit:contain;display:block;">'
             f'</div>'
         )
 
