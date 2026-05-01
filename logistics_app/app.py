@@ -1327,7 +1327,7 @@ def _widget_calendario(seccion_id: str, tipo: str = "stock") -> None:
             st.rerun()
     with ct:
         st.markdown(
-            f"<h3 style='text-align:center;color:#1A2E4A;margin:0;font-size:1rem;'>"
+            f"<h3 style='text-align:center;color:#1A2E4A;margin:0;'>"
             f"{MESES[mes-1]} {anio}</h3>",
             unsafe_allow_html=True,
         )
@@ -1483,20 +1483,13 @@ tabs = st.tabs(["📅 Calendario de subidas de archivos", "📦 Stock", "📥 Ll
 # TAB 0 — CALENDARIO DE SUBIDAS (siempre visible, va primero para evitar st.stop())
 # ══════════════════════════════════════════════════════════════════════════════
 with tabs[0]:
-    _cal_tipos = [
-        ("stock",    "📦 Stock actual"),
-        ("llegadas", "📥 Llegadas al almacén"),
-        ("envios",   "📤 Envíos planificados"),
-    ]
-    _cal_cols = st.columns(3)
-    for _ci, (_ctipo, _ctitulo) in enumerate(_cal_tipos):
-        with _cal_cols[_ci]:
-            st.markdown(
-                f"<h4 style='color:#1A2E4A;text-align:center;"
-                f"font-size:1rem;margin-bottom:12px;'>{_ctitulo}</h4>",
-                unsafe_allow_html=True,
-            )
-            _widget_calendario(_seccion_activa, tipo=_ctipo)
+    _subtabs = st.tabs(["📦 Stock actual", "📥 Llegadas al almacén", "📤 Envíos planificados"])
+    with _subtabs[0]:
+        _widget_calendario(_seccion_activa, tipo="stock")
+    with _subtabs[1]:
+        _widget_calendario(_seccion_activa, tipo="llegadas")
+    with _subtabs[2]:
+        _widget_calendario(_seccion_activa, tipo="envios")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 1 — STOCK
